@@ -3,5 +3,9 @@ server:
 agents:
   copilot:
     enabled: true
+    token: ""
   codex:
     enabled: true
+  linear:
+    enabled: true
+    token: ""

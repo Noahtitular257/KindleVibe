@@ -28,11 +28,16 @@ type Config struct {
 	} `yaml:"server"`
 	Agents struct {
 		Copilot struct {
-			Enabled bool `yaml:"enabled"`
+			Enabled bool   `yaml:"enabled"`
+			Token   string `yaml:"token"`
 		} `yaml:"copilot"`
 		Codex struct {
 			Enabled bool `yaml:"enabled"`
 		} `yaml:"codex"`
+		Linear struct {
+			Enabled bool   `yaml:"enabled"`
+			Token   string `yaml:"token"`
+		} `yaml:"linear"`
 	} `yaml:"agents"`
 }
 
@@ -49,8 +54,19 @@ type MeterSegment struct {
 type AgentStats struct {
 	Name      string
 	Bars      []UsageBar
+	Lists     []AgentList
 	Detail    string
 	IsRunning bool
+}
+
+type ListItem struct {
+	Identifier string
+	Text       string
+}
+
+type AgentList struct {
+	Title string
+	Items []ListItem
 }
 
 type ProviderBar struct {
@@ -65,6 +81,12 @@ type ProviderPanel struct {
 	Name   string
 	Detail string
 	Bars   []ProviderBar
+	Lists  []ProviderList
+}
+
+type ProviderList struct {
+	Title string
+	Items []ListItem
 }
 
 type ExchangeRateRow struct {
@@ -136,9 +158,49 @@ type currencyPair struct {
 	Quote string
 }
 
+type linearGraphQLRequest struct {
+	Query     string         `json:"query"`
+	Variables map[string]any `json:"variables,omitempty"`
+}
+
+type linearTransitionResponse struct {
+	Data struct {
+		IssueUpdate struct {
+			Success bool `json:"success"`
+		} `json:"issueUpdate"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+type linearGraphQLResponse struct {
+	Data struct {
+		Viewer struct {
+			Name string `json:"name"`
+		} `json:"viewer"`
+		Todo       linearIssueConnection `json:"todo"`
+		InProgress linearIssueConnection `json:"inProgress"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+type linearIssueConnection struct {
+	Nodes []linearIssueNode `json:"nodes"`
+}
+
+type linearIssueNode struct {
+	ID         string `json:"id"`
+	Identifier string `json:"identifier"`
+	Title      string `json:"title"`
+}
+
 const (
 	indexTemplatePath = "index.html"
 	meterSegments     = 48
+	linearListMax     = 10
 )
 
 var defaultExchangePairs = []currencyPair{
@@ -187,10 +249,10 @@ func fetchCodexStats() (AgentStats, error) {
 }
 
 // fetchCopilotStats calls GitHub's Copilot usage endpoint and converts the response into dashboard bars.
-func fetchCopilotStats() (AgentStats, error) {
+func fetchCopilotStats(cfg *Config) (AgentStats, error) {
 	stats := AgentStats{Name: "GitHub Copilot", IsRunning: true}
 
-	token, err := resolveCopilotToken()
+	token, err := resolveCopilotToken(cfg.Agents.Copilot.Token)
 	if err != nil {
 		return stats, err
 	}
@@ -242,8 +304,152 @@ func fetchCopilotStats() (AgentStats, error) {
 	return stats, nil
 }
 
+// fetchLinearStats calls Linear GraphQL and returns compact Todo/In Progress issue lists for the current assignee.
+func fetchLinearStats(cfg *Config) (AgentStats, error) {
+	stats := AgentStats{Name: "Linear", IsRunning: true}
+
+	token, err := resolveLinearToken(cfg.Agents.Linear.Token)
+	if err != nil {
+		return stats, err
+	}
+
+	query := `query KindleVibeLinearIssues($first: Int!) {
+  todo: issues(
+    first: $first
+    orderBy: updatedAt
+    filter: {assignee: {isMe: {eq: true}}, state: {type: {eq: "unstarted"}}}
+  ) {
+    nodes {
+      id
+      identifier
+      title
+    }
+  }
+  inProgress: issues(
+    first: $first
+    orderBy: updatedAt
+    filter: {assignee: {isMe: {eq: true}}, state: {type: {eq: "started"}}}
+  ) {
+    nodes {
+      id
+      identifier
+      title
+    }
+  }
+}`
+
+	payload := linearGraphQLRequest{
+		Query: query,
+		Variables: map[string]any{
+			"first": linearListMax,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return stats, err
+	}
+
+	req, err := http.NewRequest("POST", "https://api.linear.app/graphql", strings.NewReader(string(body)))
+	if err != nil {
+		return stats, err
+	}
+	req.Header.Set("Authorization", token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return stats, fmt.Errorf("linear request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return stats, err
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return stats, fmt.Errorf("linear token is invalid or expired")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return stats, fmt.Errorf("linear request returned %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
+	}
+
+	var result linearGraphQLResponse
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		return stats, fmt.Errorf("decode linear response: %v", err)
+	}
+	if len(result.Errors) > 0 {
+		return stats, fmt.Errorf("linear query error: %s", strings.TrimSpace(result.Errors[0].Message))
+	}
+
+	// Detail intentionally left blank – assignee is not shown.
+
+	stats.Lists = append(stats.Lists,
+		linearIssueList("Todo", result.Data.Todo.Nodes),
+		linearIssueList("In Progress", result.Data.InProgress.Nodes),
+	)
+
+	return stats, nil
+}
+
+// resolveLinearToken finds a Linear API token from local environment variables.
+func resolveLinearToken(configToken string) (string, error) {
+	if token := strings.TrimSpace(configToken); token != "" {
+		return token, nil
+	}
+	for _, key := range []string{"LINEAR_API_TOKEN", "LINEAR_TOKEN"} {
+		if token := strings.TrimSpace(os.Getenv(key)); token != "" {
+			return token, nil
+		}
+	}
+	return "", fmt.Errorf("no Linear token found; set agents.linear.token or LINEAR_API_TOKEN")
+}
+
+// linearIssueList converts Linear issues into compact rows suitable for Kindle width.
+func linearIssueList(title string, nodes []linearIssueNode) AgentList {
+	list := AgentList{Title: title}
+	for _, node := range nodes {
+		text := strings.TrimSpace(node.Title)
+		if id := strings.TrimSpace(node.Identifier); id != "" {
+			text = id + " " + text
+		}
+		if text == "" {
+			continue
+		}
+		list.Items = append(list.Items, ListItem{
+			Identifier: strings.TrimSpace(node.ID),
+			Text:       truncateText(text, 54),
+		})
+		if len(list.Items) >= linearListMax {
+			break
+		}
+	}
+	if len(list.Items) == 0 {
+		list.Items = []ListItem{{Text: "(none)"}}
+	}
+	return list
+}
+
+// truncateText clips long lines to a fixed width and appends an ellipsis marker.
+func truncateText(text string, maxLen int) string {
+	text = strings.TrimSpace(text)
+	if maxLen <= 0 || len(text) <= maxLen {
+		return text
+	}
+	if maxLen <= 3 {
+		return text[:maxLen]
+	}
+	return text[:maxLen-3] + "..."
+}
+
 // resolveCopilotToken finds a Copilot token from the environment first, then from the local Copilot app state.
-func resolveCopilotToken() (string, error) {
+func resolveCopilotToken(configToken string) (string, error) {
+	if token := strings.TrimSpace(configToken); token != "" {
+		return token, nil
+	}
 	if token := strings.TrimSpace(os.Getenv("COPILOT_API_TOKEN")); token != "" {
 		return token, nil
 	}
@@ -252,7 +458,7 @@ func resolveCopilotToken() (string, error) {
 	data, err := os.ReadFile(appsPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("no Copilot token found; set COPILOT_API_TOKEN or sign in via GitHub Copilot")
+			return "", fmt.Errorf("no Copilot token found; set agents.copilot.token, COPILOT_API_TOKEN, or sign in via GitHub Copilot")
 		}
 		return "", err
 	}
@@ -273,7 +479,7 @@ func resolveCopilotToken() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no Copilot token found; set COPILOT_API_TOKEN or sign in via GitHub Copilot")
+	return "", fmt.Errorf("no Copilot token found; set agents.copilot.token, COPILOT_API_TOKEN, or sign in via GitHub Copilot")
 }
 
 // copilotUsageBars selects the supported Copilot quota buckets and renders each one as a usage bar.
@@ -389,7 +595,7 @@ func summarizeAgent(stats AgentStats) ProviderPanel {
 		Detail: strings.ToUpper(strings.TrimSpace(stats.Detail)),
 	}
 
-	if len(stats.Bars) == 0 {
+	if len(stats.Bars) == 0 && len(stats.Lists) == 0 {
 		panel.Bars = []ProviderBar{{
 			Label:       "STATUS",
 			PercentText: "--",
@@ -409,6 +615,28 @@ func summarizeAgent(stats AgentStats) ProviderPanel {
 			Available:   true,
 		})
 	}
+
+	panel.Lists = make([]ProviderList, 0, len(stats.Lists))
+	for _, list := range stats.Lists {
+		title := strings.ToUpper(strings.TrimSpace(list.Title))
+		if title == "" {
+			continue
+		}
+
+		items := make([]ListItem, 0, len(list.Items))
+		for _, item := range list.Items {
+			text := strings.TrimSpace(item.Text)
+			if text == "" {
+				continue
+			}
+			items = append(items, ListItem{Identifier: item.Identifier, Text: text})
+		}
+		if len(items) == 0 {
+			items = []ListItem{{Text: "(none)"}}
+		}
+
+		panel.Lists = append(panel.Lists, ProviderList{Title: title, Items: items})
+	}
 	return panel
 }
 
@@ -419,6 +647,8 @@ func displayAgentName(name string) string {
 		return "COPILOT"
 	case "codex", "codex cli", "codex app", "codex desktop":
 		return "CODEX"
+	case "linear":
+		return "LINEAR"
 	default:
 		return strings.ToUpper(strings.TrimSpace(name))
 	}
@@ -776,6 +1006,144 @@ func codexResetText(limit codexRateLimitEntry) string {
 	}
 }
 
+// linearDoneHandler returns an HTTP handler that transitions a Linear issue to the "Done" state.
+func linearDoneHandler(cfg *Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		issueID := strings.TrimSpace(r.FormValue("id"))
+		if issueID == "" {
+			http.Error(w, "missing issue id", http.StatusBadRequest)
+			return
+		}
+
+		token, err := resolveLinearToken(cfg.Agents.Linear.Token)
+		if err != nil {
+			log.Printf("Linear Done Error: %v", err)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
+		doneStateID, err := linearDoneStateID(token, issueID)
+		if err != nil {
+			log.Printf("Linear Done Error: %v", err)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
+		mutation := linearGraphQLRequest{
+			Query: `mutation MarkDone($issueId: String!, $stateId: String!) {
+  issueUpdate(id: $issueId, input: {stateId: $stateId}) {
+    success
+  }
+}`,
+			Variables: map[string]any{
+				"issueId": issueID,
+				"stateId": doneStateID,
+			},
+		}
+
+		body, _ := json.Marshal(mutation)
+		req, err := http.NewRequest("POST", "https://api.linear.app/graphql", strings.NewReader(string(body)))
+		if err != nil {
+			log.Printf("Linear Done Error: %v", err)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		req.Header.Set("Authorization", token)
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Linear Done Error: %v", err)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		defer resp.Body.Close()
+
+		respBody, _ := io.ReadAll(resp.Body)
+		var result linearTransitionResponse
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			log.Printf("Linear Done Error: decode: %v", err)
+		} else if len(result.Errors) > 0 {
+			log.Printf("Linear Done Error: %s", result.Errors[0].Message)
+		} else if result.Data.IssueUpdate.Success {
+			log.Printf("Linear: marked issue %s as Done", issueID)
+		}
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+// linearDoneStateID finds the ID of the "Done" (completed-type) workflow state for the team that owns the given issue.
+func linearDoneStateID(token string, issueID string) (string, error) {
+	query := linearGraphQLRequest{
+		Query: `query DoneState($issueId: String!) {
+  issue(id: $issueId) {
+    team {
+      states {
+        nodes {
+          id
+          name
+          type
+        }
+      }
+    }
+  }
+}`,
+		Variables: map[string]any{
+			"issueId": issueID,
+		},
+	}
+
+	body, _ := json.Marshal(query)
+	req, err := http.NewRequest("POST", "https://api.linear.app/graphql", strings.NewReader(string(body)))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		Data struct {
+			Issue struct {
+				Team struct {
+					States struct {
+						Nodes []struct {
+							ID   string `json:"id"`
+							Name string `json:"name"`
+							Type string `json:"type"`
+						} `json:"nodes"`
+					} `json:"states"`
+				} `json:"team"`
+			} `json:"issue"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("decode workflow states: %v", err)
+	}
+
+	for _, state := range result.Data.Issue.Team.States.Nodes {
+		if state.Type == "completed" {
+			return state.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no completed-type workflow state found for issue %s", issueID)
+}
+
 // loadIndexTemplate finds and parses the dashboard HTML template from the working directory or binary directory.
 func loadIndexTemplate() (*template.Template, error) {
 	candidates := []string{indexTemplatePath}
@@ -791,7 +1159,12 @@ func loadIndexTemplate() (*template.Template, error) {
 			return nil, fmt.Errorf("error accessing template %q: %w", candidate, err)
 		}
 
-		tmpl, err := template.ParseFiles(candidate)
+		tmpl, err := template.New(filepath.Base(candidate)).Funcs(template.FuncMap{
+			"slice": func() []ProviderPanel { return nil },
+			"append": func(s []ProviderPanel, v ProviderPanel) []ProviderPanel {
+				return append(s, v)
+			},
+		}).ParseFiles(candidate)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing template %q: %w", candidate, err)
 		}
@@ -826,7 +1199,7 @@ func main() {
 
 			var agents []AgentStats
 			if cfg.Agents.Copilot.Enabled {
-				s, err := fetchCopilotStats()
+				s, err := fetchCopilotStats(cfg)
 				if err != nil {
 					log.Printf("Copilot Error: %v", err)
 				}
@@ -836,6 +1209,13 @@ func main() {
 				s, err := fetchCodexStats()
 				if err != nil {
 					log.Printf("Codex Error: %v", err)
+				}
+				agents = append(agents, s)
+			}
+			if cfg.Agents.Linear.Enabled {
+				s, err := fetchLinearStats(cfg)
+				if err != nil {
+					log.Printf("Linear Error: %v", err)
 				}
 				agents = append(agents, s)
 			}
@@ -862,6 +1242,7 @@ func main() {
 		}
 
 		http.HandleFunc("/", handler)
+		http.HandleFunc("/linear/done", linearDoneHandler(cfg))
 		addr := fmt.Sprintf(":%d", cfg.Server.Port)
 		fmt.Printf("Starting KindleVibe server on http://localhost%s\n", addr)
 		if err := http.ListenAndServe(addr, nil); err != nil {

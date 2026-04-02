@@ -27,6 +27,21 @@
         padding: 12px 14px 12px 14px;
       }
 
+      .provider-row {
+        display: flex;
+        margin-bottom: 10px;
+      }
+
+      .provider-row .provider {
+        flex: 1;
+        margin-bottom: 0;
+        margin-right: 10px;
+      }
+
+      .provider-row .provider:last-child {
+        margin-right: 0;
+      }
+
       .provider {
         border: 3px solid #1d1d1b;
         padding: 10px 12px 2px 12px;
@@ -67,31 +82,27 @@
       }
 
       .bar-layout {
-        width: 100%;
-        border-collapse: collapse;
-      }
-
-      .bar-layout td {
-        vertical-align: middle;
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       .bar-track-cell {
-        width: 100%;
-        padding-right: 10px;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
       }
 
-      .bar-value-number {
-        font-size: 28px;
-        line-height: 34px;
+      .bar-value {
+        white-space: nowrap;
+        text-align: right;
+        flex-shrink: 0;
+      }
+
+      .bar-value-text {
+        font-size: 22px;
+        line-height: 28px;
         letter-spacing: 0;
-      }
-
-      .bar-value-unit {
-        color: #6d6965;
-        font-size: 15px;
-        line-height: 15px;
-        vertical-align: top;
-        padding-left: 4px;
       }
 
       .bar-track {
@@ -99,11 +110,13 @@
         font-size: 0;
         line-height: 0;
         white-space: nowrap;
+        overflow: hidden;
       }
 
       .segment {
         display: inline-block;
-        width: 8px;
+        width: calc((100% - 47px) / 48);
+        min-width: 2px;
         height: 16px;
         margin-right: 1px;
         background: #d6d2cc;
@@ -122,6 +135,89 @@
         font-size: 12px;
         line-height: 14px;
         min-height: 14px;
+      }
+
+      .list-row {
+        margin-bottom: 10px;
+        margin-top: 24px;
+      }
+
+      .list-row:first-child {
+        margin-top: 0;
+      }
+
+      .list-title {
+        color: #666;
+        font-size: 17px;
+        line-height: 18px;
+        margin-bottom: 14px;
+        font-weight: bold;
+        text-decoration: underline;
+      }
+
+      .list-item {
+        color: #1d1d1b;
+        font-size: 17px;
+        line-height: 20px;
+        margin-bottom: 16px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: flex;
+        align-items: center;
+      }
+
+      .list-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .list-item form {
+        display: flex;
+        align-items: center;
+        margin: 0;
+        padding: 0;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .list-item input[type="checkbox"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 22px;
+        height: 22px;
+        border: 2px solid #1d1d1b;
+        margin: 0;
+        flex-shrink: 0;
+        cursor: pointer;
+        background: #fff;
+        position: relative;
+        border-radius: 0;
+      }
+
+      .list-item input[type="checkbox"]:checked {
+        background: #1d1d1b;
+      }
+
+      .list-item input[type="checkbox"]:checked::after {
+        content: "";
+        position: absolute;
+        left: 6px;
+        top: 2px;
+        width: 6px;
+        height: 12px;
+        border: solid #fff;
+        border-width: 0 3px 3px 0;
+        transform: rotate(45deg);
+      }
+
+      .list-item label {
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
+        padding-top: 2px;
       }
 
       .divider {
@@ -166,7 +262,53 @@
   </head>
   <body>
     <div class="frame">
+      {{/* Split providers into bar-type (Copilot/Codex) and list-type (Linear) */}}
+      {{ $barProviders := slice }}
+      {{ $listProviders := slice }}
       {{ range .Providers }}
+        {{ if .Lists }}
+          {{ $listProviders = append $listProviders . }}
+        {{ else }}
+          {{ $barProviders = append $barProviders . }}
+        {{ end }}
+      {{ end }}
+
+      {{ if gt (len $barProviders) 1 }}
+      <div class="provider-row">
+        {{ range $barProviders }}
+        <div class="provider">
+          <table class="provider-header">
+            <tr>
+              <td class="provider-name">{{ .Name }}</td>
+              <td class="provider-detail">{{ .Detail }}</td>
+            </tr>
+          </table>
+
+          {{ range .Bars }}
+          <div class="bar-row">
+            <div class="bar-label">{{ .Label }}</div>
+            <div class="bar-layout">
+              <div class="bar-track-cell">
+                <div class="bar-track">
+                  {{ range $index, $segment := .Segments }}
+                  <span
+                    class="segment{{ if $segment.Filled }} filled{{ end }}{{ if eq $index 47 }} last{{ end }}"
+                  ></span>
+                  {{ end }}
+                </div>
+              </div>
+              <div class="bar-value">
+                <span class="bar-value-text">{{ .PercentText }}%</span>
+              </div>
+            </div>
+            <div class="bar-meta">{{ .Meta }}</div>
+          </div>
+          {{ end }}
+        </div>
+        {{ end }}
+      </div>
+      {{ else }}
+      {{ range $barProviders }}
       <div class="provider">
         <table class="provider-header">
           <tr>
@@ -178,24 +320,53 @@
         {{ range .Bars }}
         <div class="bar-row">
           <div class="bar-label">{{ .Label }}</div>
-          <table class="bar-layout">
-            <tr>
-              <td class="bar-track-cell">
-                <div class="bar-track">
-                  {{ range $index, $segment := .Segments }}
-                  <span
-                    class="segment{{ if $segment.Filled }} filled{{ end }}{{ if eq $index 47 }} last{{ end }}"
-                  ></span>
-                  {{ end }}
-                </div>
-              </td>
-              <td class="bar-value">
-                <span class="bar-value-number">{{ .PercentText }}</span>
-                <span class="bar-value-unit">%</span>
-              </td>
-            </tr>
-          </table>
+          <div class="bar-layout">
+            <div class="bar-track-cell">
+              <div class="bar-track">
+                {{ range $index, $segment := .Segments }}
+                <span
+                  class="segment{{ if $segment.Filled }} filled{{ end }}{{ if eq $index 47 }} last{{ end }}"
+                ></span>
+                {{ end }}
+              </div>
+            </div>
+            <div class="bar-value">
+              <span class="bar-value-text">{{ .PercentText }}%</span>
+            </div>
+          </div>
           <div class="bar-meta">{{ .Meta }}</div>
+        </div>
+        {{ end }}
+      </div>
+      {{ end }}
+      {{ end }}
+
+      {{ range $listProviders }}
+      <div class="provider">
+        <table class="provider-header">
+          <tr>
+            <td class="provider-name">{{ .Name }}</td>
+            <td class="provider-detail">{{ .Detail }}</td>
+          </tr>
+        </table>
+
+        {{ range .Lists }}
+        <div class="list-row">
+          <div class="list-title">{{ .Title }}</div>
+          {{ range .Items }}
+          <div class="list-item">
+            {{ if .Identifier }}
+            <form method="POST" action="/linear/done">
+              <input type="hidden" name="id" value="{{ .Identifier }}" />
+              <input type="checkbox" id="cb-{{ .Identifier }}" onchange="this.form.submit()" />
+              &nbsp;
+              <label for="cb-{{ .Identifier }}">{{ .Text }}</label>
+            </form>
+            {{ else }}
+            {{ .Text }}
+            {{ end }}
+          </div>
+          {{ end }}
         </div>
         {{ end }}
       </div>

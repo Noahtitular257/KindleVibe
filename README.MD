@@ -1,6 +1,6 @@
 # KindleVibe
 
-KindleVibe is a small local Go server that shows GitHub Copilot and Codex usage in a Kindle-friendly web page. It is designed for e-ink screens: high contrast, portrait-friendly layout, large typography, and automatic refresh.
+KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Linear activity in a Kindle-friendly web page. It is designed for e-ink screens: high contrast, portrait-friendly layout, large typography, and automatic refresh.
 
 ![Demo](demo.jpg)
 
@@ -9,7 +9,7 @@ KindleVibe is a small local Go server that shows GitHub Copilot and Codex usage 
 - **Kindle optimized:** Minimal, high-contrast UI for e-ink browsers.
 - **Portrait dashboard:** Single-screen layout tuned for a 1080 x 1440 Kindle display.
 - **Auto-refresh:** Refreshes every 10 seconds with standard HTML meta refresh.
-- **Current providers:** GitHub Copilot and Codex.
+- **Current providers:** GitHub Copilot, Codex, and Linear.
 - **Exchange snapshot:** Also renders BTC/USD, USD/CNY, and AUD/CNY at the bottom of the screen.
 - **Local-only:** Reads usage from local auth state and local session files.
 - **Simple startup:** `make` rebuilds and starts the server.
@@ -31,8 +31,13 @@ KindleVibe is a small local Go server that shows GitHub Copilot and Codex usage 
 
 2. **Configure the server**
 
-   Edit `config.yaml` to set the port and enabled agents.
-   Keep secrets out of this file. `config.yaml` is a sample config that is safe to commit.
+   Create a local config from the committed example:
+
+   ```bash
+   cp config.yaml.example config.yaml
+   ```
+
+   Then edit `config.yaml` to set the port, enabled agents, and optional tokens.
 
 3. **Build and run**
 
@@ -52,7 +57,7 @@ KindleVibe is a small local Go server that shows GitHub Copilot and Codex usage 
 
 ## Configuration
 
-`config.yaml`:
+`config.yaml.example`:
 
 ```yaml
 server:
@@ -60,13 +65,17 @@ server:
 agents:
   copilot:
     enabled: true
+    token: ""
   codex:
     enabled: true
+  linear:
+    enabled: true
+    token: ""
 ```
 
 `config.yaml` only controls which providers are shown and which port the server listens on.
-It does not store tokens. For local credentials, KindleVibe prefers auto-discovery from files you
-already have, with an environment-variable override for Copilot.
+Your local `config.yaml` can also include `agents.copilot.token` and `agents.linear.token`.
+`config.yaml` is gitignored for local-only secrets.
 
 ## Data Sources
 
@@ -78,8 +87,9 @@ KindleVibe fetches Copilot usage from GitHub's internal Copilot endpoint using l
 
 Token resolution order:
 
-1. `COPILOT_API_TOKEN`
-2. `~/.config/github-copilot/apps.json`
+1. `agents.copilot.token` in `config.yaml`
+2. `COPILOT_API_TOKEN`
+3. `~/.config/github-copilot/apps.json`
 
 #### Recommended setup
 
@@ -96,7 +106,7 @@ make
 To make it persistent for your shell, add the export line to your shell profile such as `~/.zshrc`,
 reload the shell, and then start KindleVibe again.
 
-Do not put `COPILOT_API_TOKEN` in `config.yaml`. That file is intended to remain safe to commit to GitHub.
+You can keep the token either in `config.yaml` (`agents.copilot.token`) or in your shell environment (`COPILOT_API_TOKEN`).
 
 If `apps.json` is used, `main.go` sorts the available app entries and uses the first non-empty `oauth_token` it finds.
 
@@ -175,6 +185,30 @@ Reset time comes from:
 If you have not used Codex locally yet, or none of the recent session files contain a valid `token_count` event, the Codex section will render without usage bars instead of crashing the page.
 The usual fix is simply to use Codex locally once so it writes fresh session data, then refresh the dashboard.
 
+### Linear
+
+KindleVibe fetches your assigned Linear issues from the Linear GraphQL API and renders a tiny list for:
+
+- `Todo`
+- `In Progress`
+
+Linear token resolution order:
+
+1. `agents.linear.token` in `config.yaml`
+2. `LINEAR_API_TOKEN`
+3. `LINEAR_TOKEN`
+
+Set a token in your shell before running `make`:
+
+```bash
+export LINEAR_API_TOKEN=your_linear_token_here
+make
+```
+
+You can keep the Linear token in `config.yaml` (`agents.linear.token`) or in environment variables.
+
+The Linear query is scoped to issues assigned to you (`isMe: true`) and fetches a small number of recent items per state so the list stays compact on Kindle screens.
+
 ### Exchange Rates
 
 KindleVibe also fetches a small set of reference exchange rates for the footer section:
@@ -196,9 +230,10 @@ KindleVibe's exchange-rate integration is inspired by [exchange-api](https://git
 
 - The app is intended for local-network use.
 - This repository does not need committed credentials.
-- Copilot tokens are read from your local environment or local GitHub Copilot app state.
+- Copilot tokens are read from local `config.yaml`, local environment, or local GitHub Copilot app state.
 - Codex usage is read from local session files only.
-- `config.yaml` should stay free of secrets so the repository can be published safely.
+- Linear data is fetched with a token from local `config.yaml` or local environment.
+- `config.yaml.example` is safe to commit; local `config.yaml` is gitignored.
 
 > ⚠️ **AI Development Notice**: This project was heavily developed using AI tools including Codex and Copilot. It brings potential legal and ethical concerns, so use it with caution and always review the generated code.
 
@@ -209,7 +244,8 @@ KindleVibe's exchange-rate integration is inspired by [exchange-api](https://git
 
 ## Repository Notes
 
-- `config.yaml` is a sample config and is safe to commit.
+- `config.yaml.example` is a sample config and is safe to commit.
+- `config.yaml` is local-only and gitignored.
 - The built `kindlevibe` binary should not be committed.
 - Exchange-rate data source attribution: [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api)
 
