@@ -200,7 +200,7 @@ KindleVibe's exchange-rate integration is inspired by [exchange-api](https://git
 - Codex usage is read from local session files only.
 - `config.yaml` should stay free of secrets so the repository can be published safely.
 
-> ⚠️ **AI Development Notice**: This project was heavily developed using AI tools including [Claude Code](https://claude.ai/code) and [Windsurf](https://windsurf.com/refer?referral_code=bfc775d405). It brings potential legal and ethical concerns, so use it with caution and always review the generated code.
+> ⚠️ **AI Development Notice**: This project was heavily developed using AI tools including Codex and Copilot. It brings potential legal and ethical concerns, so use it with caution and always review the generated code.
 
 ![Dolores was privately chatting with Arnold. - HBO/Westworld](https://github.com/lexrus/AppAboutView/raw/main/screenshots/ai_injected_photo.webp)
 
