@@ -3,8 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="refresh" content="10" />
     <title>KindleVibe</title>
+    <script>
+      var refreshTimer = null;
+
+      function scheduleRefresh() {
+        clearRefresh();
+        refreshTimer = setTimeout(function () {
+          if (!location.hash || location.hash === "#") {
+            window.location.reload();
+          }
+        }, 10000);
+      }
+
+      function clearRefresh() {
+        if (refreshTimer) {
+          clearTimeout(refreshTimer);
+          refreshTimer = null;
+        }
+      }
+
+      function updateRefreshState() {
+        if (location.hash && location.hash.indexOf("#task-") === 0) {
+          clearRefresh();
+          return;
+        }
+        scheduleRefresh();
+      }
+
+      window.addEventListener("load", updateRefreshState);
+      window.addEventListener("hashchange", updateRefreshState);
+    </script>
     <style>
       html,
       body {
@@ -58,7 +87,7 @@
       }
 
       .provider-detail {
-        color: #ccc;
+        color: #000;
         font-size: 15px;
         font-weight: bold;
         line-height: 30px;
@@ -220,6 +249,159 @@
         padding-top: 2px;
       }
 
+      .list-item button {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
+        padding: 2px 0 0 0;
+      }
+
+      .task-modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(255, 255, 255, 0.96);
+      }
+
+      .task-modal:target {
+        display: block;
+      }
+
+      .task-modal-card {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        border: 3px solid #1d1d1b;
+        background: #fff;
+        color: #1d1d1b;
+        width: 88vw;
+        max-width: 88vw;
+        max-height: 80vh;
+        overflow: auto;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+
+      .task-modal-title {
+        font-size: 18px;
+        font-weight: bold;
+        line-height: 24px;
+        margin-bottom: 12px;
+        padding-right: 56px;
+        word-break: break-word;
+        white-space: normal;
+      }
+
+      .task-modal-detail {
+        display: block;
+        margin-bottom: 14px;
+      }
+
+      .task-detail-block {
+        display: block;
+        border: 2px solid #000;
+        background: #fff;
+        color: #000;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+        box-sizing: border-box;
+      }
+
+      .task-detail-block:last-child {
+        margin-bottom: 0;
+      }
+
+      .task-detail-heading {
+        display: block;
+        font-size: 13px;
+        line-height: 16px;
+        font-weight: bold;
+        color: #000;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+
+      .task-detail-content {
+        display: block;
+        font-size: 16px;
+        line-height: 22px;
+        color: #000;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .task-modal-actions {
+        display: block;
+        text-align: center;
+        margin-top: 16px;
+      }
+
+      .task-modal-actions form {
+        display: block;
+        margin: 0;
+        text-align: center;
+      }
+
+      .task-modal-complete-box {
+        display: inline-block;
+        border: 3px solid #000;
+        background: #fff;
+        padding: 0;
+        text-align: center;
+      }
+
+      .task-modal-complete {
+        display: block;
+        border: 0;
+        background: #fff;
+        color: #000;
+        text-decoration: none;
+        padding: 14px 24px;
+        font-size: 16px;
+        line-height: 20px;
+        font-weight: 900;
+        font-family: inherit;
+        cursor: pointer;
+        text-align: center;
+        margin: 0;
+      }
+
+      .task-modal-close {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        display: block;
+        width: 34px;
+        height: 34px;
+        color: #000;
+        text-decoration: none;
+        font-size: 28px;
+        line-height: 28px;
+        font-weight: bold;
+        font-family: inherit;
+        cursor: pointer;
+        padding: 2px 0;
+        border: 3px solid #000;
+        background: #fff;
+        text-align: center;
+        box-sizing: border-box;
+      }
+
       .divider {
         height: 2px;
         background: #c8c3bc;
@@ -358,8 +540,66 @@
                 onchange="this.form.submit()"
               />
               &nbsp;
-              <label for="cb-{{ .Identifier }}">{{ .Text }}</label>
+              <button
+                type="button"
+                onclick="location.hash='task-{{ .Identifier }}'"
+              >
+                {{ .Text }}
+              </button>
             </form>
+            <div id="task-{{ .Identifier }}" class="task-modal">
+              <div class="task-modal-card">
+                <a href="#" class="task-modal-close" aria-label="Close">×</a>
+                <div class="task-modal-title">{{ .Text }}</div>
+                <div class="task-modal-detail">
+                  {{ if .StateName }}
+                  <div class="task-detail-block">
+                    <div class="task-detail-heading">State</div>
+                    <div class="task-detail-content">{{ .StateName }}</div>
+                  </div>
+                  {{ end }} {{ if .Priority }}
+                  <div class="task-detail-block">
+                    <div class="task-detail-heading">Priority</div>
+                    <div class="task-detail-content">{{ .Priority }}</div>
+                  </div>
+                  {{ end }} {{ if .CreatedAt }}
+                  <div class="task-detail-block">
+                    <div class="task-detail-heading">Created</div>
+                    <div class="task-detail-content">{{ .CreatedAt }}</div>
+                  </div>
+                  {{ end }} {{ if .UpdatedAt }}
+                  <div class="task-detail-block">
+                    <div class="task-detail-heading">Updated</div>
+                    <div class="task-detail-content">{{ .UpdatedAt }}</div>
+                  </div>
+                  {{ end }} {{ if .Description }}
+                  <div class="task-detail-block">
+                    <div class="task-detail-heading">Description</div>
+                    <div class="task-detail-content">{{ .Description }}</div>
+                  </div>
+                  {{ end }} {{ if not .StateName }}{{ if not .Priority }}{{ if
+                  not .CreatedAt }}{{ if not .UpdatedAt }}{{ if not .Description
+                  }}
+                  <div class="task-detail-block">
+                    <div class="task-detail-heading">Details</div>
+                    <div class="task-detail-content">
+                      No additional details available.
+                    </div>
+                  </div>
+                  {{ end }}{{ end }}{{ end }}{{ end }}{{ end }}
+                </div>
+                <div class="task-modal-actions">
+                  <form method="POST" action="/linear/done">
+                    <input type="hidden" name="id" value="{{ .Identifier }}" />
+                    <div class="task-modal-complete-box">
+                      <button type="submit" class="task-modal-complete">
+                        Complete the task
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
             {{ else }} {{ .Text }} {{ end }}
           </div>
           {{ end }}

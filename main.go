@@ -67,8 +67,17 @@ type AgentStats struct {
 }
 
 type ListItem struct {
-	Identifier string
-	Text       string
+	Identifier  string
+	Text        string
+	Detail      string
+	IssueID     string
+	TeamName    string
+	StateName   string
+	Priority    string
+	CreatedAt   string
+	UpdatedAt   string
+	URL         string
+	Description string
 }
 
 type AgentList struct {
@@ -207,9 +216,20 @@ type linearIssueConnection struct {
 }
 
 type linearIssueNode struct {
-	ID         string `json:"id"`
-	Identifier string `json:"identifier"`
-	Title      string `json:"title"`
+	ID          string  `json:"id"`
+	Identifier  string  `json:"identifier"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Priority    float64 `json:"priority"`
+	URL         string  `json:"url"`
+	UpdatedAt   string  `json:"updatedAt"`
+	CreatedAt   string  `json:"createdAt"`
+	State       struct {
+		Name string `json:"name"`
+	} `json:"state"`
+	Team struct {
+		Name string `json:"name"`
+	} `json:"team"`
 }
 
 const (
@@ -338,6 +358,17 @@ func fetchLinearStats(cfg *Config) (AgentStats, error) {
       id
       identifier
       title
+      description
+      priority
+      url
+      updatedAt
+      createdAt
+      state {
+        name
+      }
+      team {
+        name
+      }
     }
   }
   inProgress: issues(
@@ -349,6 +380,17 @@ func fetchLinearStats(cfg *Config) (AgentStats, error) {
       id
       identifier
       title
+      description
+      priority
+      url
+      updatedAt
+      createdAt
+      state {
+        name
+      }
+      team {
+        name
+      }
     }
   }
 }`
@@ -867,9 +909,62 @@ func linearIssueList(title string, nodes []linearIssueNode) AgentList {
 		if text == "" {
 			continue
 		}
+
+		issueID := strings.TrimSpace(node.Identifier)
+		teamName := strings.TrimSpace(node.Team.Name)
+		stateName := strings.TrimSpace(node.State.Name)
+		priority := ""
+		if node.Priority > 0 {
+			priority = fmt.Sprintf("%.0f", node.Priority)
+		}
+		createdAt := formatGeminiReset(strings.TrimSpace(node.CreatedAt))
+		updatedAt := formatGeminiReset(strings.TrimSpace(node.UpdatedAt))
+		url := strings.TrimSpace(node.URL)
+		description := strings.TrimSpace(node.Description)
+
+		detailParts := []string{}
+		if issueID != "" {
+			detailParts = append(detailParts, "Issue: "+issueID)
+		}
+		if teamName != "" {
+			detailParts = append(detailParts, "Team: "+teamName)
+		}
+		if stateName != "" {
+			detailParts = append(detailParts, "State: "+stateName)
+		}
+		if priority != "" {
+			detailParts = append(detailParts, "Priority: "+priority)
+		}
+		if createdAt != "" {
+			detailParts = append(detailParts, "Created: "+createdAt)
+		}
+		if updatedAt != "" {
+			detailParts = append(detailParts, "Updated: "+updatedAt)
+		}
+		if url != "" {
+			detailParts = append(detailParts, "URL: "+url)
+		}
+		if description != "" {
+			detailParts = append(detailParts, "Description: "+description)
+		}
+
+		detailText := strings.Join(detailParts, "\n")
+		if detailText == "" {
+			detailText = "No additional details available."
+		}
+
 		list.Items = append(list.Items, ListItem{
-			Identifier: strings.TrimSpace(node.ID),
-			Text:       truncateText(text, 54),
+			Identifier:  strings.TrimSpace(node.ID),
+			Text:        truncateText(text, 54),
+			Detail:      detailText,
+			IssueID:     issueID,
+			TeamName:    teamName,
+			StateName:   stateName,
+			Priority:    priority,
+			CreatedAt:   createdAt,
+			UpdatedAt:   updatedAt,
+			URL:         url,
+			Description: description,
 		})
 		if len(list.Items) >= linearListMax {
 			break
@@ -1077,7 +1172,8 @@ func summarizeAgent(stats AgentStats) ProviderPanel {
 			if text == "" {
 				continue
 			}
-			items = append(items, ListItem{Identifier: item.Identifier, Text: text})
+			item.Text = text
+			items = append(items, item)
 		}
 		if len(items) == 0 {
 			items = []ListItem{{Text: "(none)"}}
@@ -1616,6 +1712,15 @@ func loadIndexTemplate() (*template.Template, error) {
 			"slice": func() []ProviderPanel { return nil },
 			"append": func(s []ProviderPanel, v ProviderPanel) []ProviderPanel {
 				return append(s, v)
+			},
+			"splitLines": func(s string) []string {
+				return strings.Split(s, "\n")
+			},
+			"hasPrefix": func(s string, prefix string) bool {
+				return strings.HasPrefix(s, prefix)
+			},
+			"trimPrefix": func(s string, prefix string) string {
+				return strings.TrimPrefix(s, prefix)
 			},
 		}).ParseFiles(candidate)
 		if err != nil {
