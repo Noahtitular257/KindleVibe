@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -105,6 +106,14 @@ type DashboardData struct {
 	Rates     []ExchangeRateRow
 	Time      string
 	Runtime   string
+}
+
+type dashboardCache struct {
+	mu         sync.RWMutex
+	data       DashboardData
+	fetchedAt  time.Time
+	refreshing bool
+	ready      chan struct{}
 }
 
 type codexRateLimitEntry struct {
@@ -1619,6 +1628,113 @@ func loadIndexTemplate() (*template.Template, error) {
 }
 
 // main parses startup flags, validates configuration, and serves the single-page dashboard.
+func buildDashboardData(cfg *Config) DashboardData {
+	var agents []AgentStats
+
+	if cfg.Agents.Copilot.Enabled {
+		s, err := fetchCopilotStats(cfg)
+		if err != nil {
+			log.Printf("Copilot Error: %v", err)
+		}
+		agents = append(agents, s)
+	}
+	if cfg.Agents.Codex.Enabled {
+		s, err := fetchCodexStats()
+		if err != nil {
+			log.Printf("Codex Error: %v", err)
+		}
+		agents = append(agents, s)
+	}
+	if cfg.Agents.Linear.Enabled {
+		s, err := fetchLinearStats(cfg)
+		if err != nil {
+			log.Printf("Linear Error: %v", err)
+		}
+		agents = append(agents, s)
+	}
+	if cfg.Agents.Gemini.Enabled {
+		s, err := fetchGeminiStats()
+		if err != nil {
+			log.Printf("Gemini Error: %v", err)
+		}
+		agents = append(agents, s)
+	}
+
+	rates, err := fetchExchangeRates()
+	if err != nil {
+		log.Printf("Rates Error: %v", err)
+	}
+
+	providers := make([]ProviderPanel, 0, len(agents))
+	for _, agent := range agents {
+		providers = append(providers, summarizeAgent(agent))
+	}
+
+	return DashboardData{
+		Providers: providers,
+		Rates:     rates,
+		Time:      time.Now().Format("15:04:05"),
+		Runtime:   "RUNTIME_01",
+	}
+}
+
+func newDashboardCache() *dashboardCache {
+	return &dashboardCache{
+		ready: make(chan struct{}),
+	}
+}
+
+func (c *dashboardCache) getOrRefresh(cfg *Config) DashboardData {
+	c.mu.RLock()
+	data := c.data
+	fetchedAt := c.fetchedAt
+	refreshing := c.refreshing
+	ready := c.ready
+	c.mu.RUnlock()
+
+	if !fetchedAt.IsZero() && time.Since(fetchedAt) < 30*time.Second {
+		return data
+	}
+
+	if fetchedAt.IsZero() {
+		c.startRefresh(cfg)
+		<-ready
+		c.mu.RLock()
+		defer c.mu.RUnlock()
+		return c.data
+	}
+
+	if !refreshing {
+		c.startRefresh(cfg)
+	}
+
+	return data
+}
+
+func (c *dashboardCache) startRefresh(cfg *Config) {
+	c.mu.Lock()
+	if c.refreshing {
+		c.mu.Unlock()
+		return
+	}
+	c.refreshing = true
+	c.mu.Unlock()
+
+	go func() {
+		data := buildDashboardData(cfg)
+
+		c.mu.Lock()
+		c.data = data
+		c.fetchedAt = time.Now()
+		if c.ready != nil {
+			close(c.ready)
+			c.ready = nil
+		}
+		c.refreshing = false
+		c.mu.Unlock()
+	}()
+}
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "Path to config file")
 	flag.Parse()
@@ -1629,64 +1745,16 @@ func main() {
 			log.Fatalf("Error loading config: %v", err)
 		}
 
-		if _, err := loadIndexTemplate(); err != nil {
+		tmpl, err := loadIndexTemplate()
+		if err != nil {
 			log.Fatalf("Error loading template: %v", err)
 		}
 
+		cache := newDashboardCache()
+		cache.startRefresh(cfg)
+
 		handler := func(w http.ResponseWriter, r *http.Request) {
-			tmpl, err := loadIndexTemplate()
-			if err != nil {
-				log.Printf("Template Error: %v", err)
-				http.Error(w, "template load failed", http.StatusInternalServerError)
-				return
-			}
-
-			var agents []AgentStats
-			if cfg.Agents.Copilot.Enabled {
-				s, err := fetchCopilotStats(cfg)
-				if err != nil {
-					log.Printf("Copilot Error: %v", err)
-				}
-				agents = append(agents, s)
-			}
-			if cfg.Agents.Codex.Enabled {
-				s, err := fetchCodexStats()
-				if err != nil {
-					log.Printf("Codex Error: %v", err)
-				}
-				agents = append(agents, s)
-			}
-			if cfg.Agents.Linear.Enabled {
-				s, err := fetchLinearStats(cfg)
-				if err != nil {
-					log.Printf("Linear Error: %v", err)
-				}
-				agents = append(agents, s)
-			}
-			if cfg.Agents.Gemini.Enabled {
-				s, err := fetchGeminiStats()
-				if err != nil {
-					log.Printf("Gemini Error: %v", err)
-				}
-				agents = append(agents, s)
-			}
-
-			rates, err := fetchExchangeRates()
-			if err != nil {
-				log.Printf("Rates Error: %v", err)
-			}
-
-			providers := make([]ProviderPanel, 0, len(agents))
-			for _, agent := range agents {
-				providers = append(providers, summarizeAgent(agent))
-			}
-
-			data := DashboardData{
-				Providers: providers,
-				Rates:     rates,
-				Time:      time.Now().Format("15:04:05"),
-				Runtime:   "RUNTIME_01",
-			}
+			data := cache.getOrRefresh(cfg)
 			if err := tmpl.Execute(w, data); err != nil {
 				log.Printf("Template Execute Error: %v", err)
 			}
