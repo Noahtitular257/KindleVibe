@@ -44,7 +44,7 @@
 
       .provider {
         border: 3px solid #1d1d1b;
-        padding: 10px 12px 10px 12px;
+        padding: 5px 10px 5px 10px;
         margin-bottom: 10px;
       }
 
@@ -54,7 +54,7 @@
         font-weight: bold;
         line-height: 40px;
         text-align: left;
-        margin-bottom: 8px;
+        margin-bottom: 4px;
       }
 
       .provider-detail {
@@ -77,10 +77,10 @@
         margin-bottom: 3px;
       }
 
+      /* Use simple flex for the overall layout but avoid flex "gap" */
       .bar-layout {
         display: flex;
         align-items: center;
-        gap: 8px;
       }
 
       .bar-track-cell {
@@ -93,6 +93,7 @@
         white-space: nowrap;
         text-align: right;
         flex-shrink: 0;
+        margin-left: 8px; /* spacing between track and percent text */
       }
 
       .bar-value-text {
@@ -101,16 +102,30 @@
         letter-spacing: 0;
       }
 
+      /*
+        Table-based track to provide reliable spacing between segments on
+        older browsers / embedded WebViews (Kindle).
+        border-spacing is widely supported and does not rely on flex-gap.
+      */
       .bar-track {
         width: 100%;
-        display: flex;
-        gap: 2px;
+        display: table;
+        table-layout: fixed; /* columns will be evenly distributed */
+        border-collapse: separate; /* enable border-spacing */
+        border-spacing: 2px 0; /* horizontal gap between segments */
+      }
+
+      .bar-track tr {
+        display: table-row;
       }
 
       .segment {
-        flex: 1;
+        display: table-cell;
+        width: auto;
         height: 18px;
         background: #d6d2cc;
+        padding: 0;
+        margin: 0;
       }
 
       .segment.filled {
@@ -125,8 +140,8 @@
       }
 
       .list-row {
-        margin-bottom: 10px;
-        margin-top: 24px;
+        margin-bottom: 8px;
+        margin-top: 12px;
       }
 
       .list-row:first-child {
@@ -134,12 +149,10 @@
       }
 
       .list-title {
-        color: #666;
-        font-size: 17px;
-        line-height: 18px;
+        color: #999;
+        font-size: 14px;
         margin-bottom: 14px;
         font-weight: bold;
-        text-decoration: underline;
       }
 
       .list-item {
@@ -264,13 +277,21 @@
             <div class="bar-label">{{ .Label }}</div>
             <div class="bar-layout">
               <div class="bar-track-cell">
-                <div class="bar-track">
-                  {{ range $index, $segment := .Segments }}
-                  <span
-                    class="segment{{ if $segment.Filled }} filled{{ end }}"
-                  ></span>
-                  {{ end }}
-                </div>
+                <!-- Table-based track for reliable separators -->
+                <table
+                  class="bar-track"
+                  role="presentation"
+                  cellspacing="0"
+                  cellpadding="0"
+                >
+                  <tr>
+                    {{ range $index, $segment := .Segments }}
+                    <td
+                      class="segment{{ if $segment.Filled }} filled{{ end }}"
+                    ></td>
+                    {{ end }}
+                  </tr>
+                </table>
               </div>
               <div class="bar-value">
                 <span class="bar-value-text">{{ .PercentText }}%</span>
@@ -293,13 +314,21 @@
           <div class="bar-label">{{ .Label }}</div>
           <div class="bar-layout">
             <div class="bar-track-cell">
-              <div class="bar-track">
-                {{ range $index, $segment := .Segments }}
-                <span
-                  class="segment{{ if $segment.Filled }} filled{{ end }}"
-                ></span>
-                {{ end }}
-              </div>
+              <!-- Table-based track for reliable separators -->
+              <table
+                class="bar-track"
+                role="presentation"
+                cellspacing="0"
+                cellpadding="0"
+              >
+                <tr>
+                  {{ range $index, $segment := .Segments }}
+                  <td
+                    class="segment{{ if $segment.Filled }} filled{{ end }}"
+                  ></td>
+                  {{ end }}
+                </tr>
+              </table>
             </div>
             <div class="bar-value">
               <span class="bar-value-text">{{ .PercentText }}%</span>
