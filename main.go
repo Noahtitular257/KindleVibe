@@ -120,9 +120,28 @@ type DashboardData struct {
 type dashboardCache struct {
 	mu         sync.RWMutex
 	data       DashboardData
+	completed  map[string]time.Time
 	fetchedAt  time.Time
 	refreshing bool
 	ready      chan struct{}
+}
+
+func (c *dashboardCache) markLinearIssueDone(issueID string) {
+	issueID = strings.TrimSpace(issueID)
+	if issueID == "" {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.completed == nil {
+		c.completed = make(map[string]time.Time)
+	}
+	now := time.Now()
+	c.completed[issueID] = now.Add(linearCompletedCacheTTL)
+	c.filterCompletedLinearLocked(&c.data, now)
+	c.fetchedAt = now
 }
 
 type codexRateLimitEntry struct {
@@ -233,9 +252,10 @@ type linearIssueNode struct {
 }
 
 const (
-	indexTemplatePath = "index.html"
-	meterSegments     = 10
-	linearListMax     = 10
+	indexTemplatePath       = "index.html"
+	meterSegments           = 10
+	linearListMax           = 10
+	linearCompletedCacheTTL = time.Minute
 )
 
 var defaultExchangePairs = []currencyPair{
@@ -1556,7 +1576,7 @@ func codexResetText(limit codexRateLimitEntry) string {
 }
 
 // linearDoneHandler returns an HTTP handler that transitions a Linear issue to the "Done" state.
-func linearDoneHandler(cfg *Config) http.HandlerFunc {
+func linearDoneHandler(cfg *Config, cache *dashboardCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1622,6 +1642,8 @@ func linearDoneHandler(cfg *Config) http.HandlerFunc {
 			log.Printf("Linear Done Error: %s", result.Errors[0].Message)
 		} else if result.Data.IssueUpdate.Success {
 			log.Printf("Linear: marked issue %s as Done", issueID)
+			cache.markLinearIssueDone(issueID)
+			go cache.startRefresh(cfg)
 		}
 
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -1785,7 +1807,48 @@ func buildDashboardData(cfg *Config) DashboardData {
 
 func newDashboardCache() *dashboardCache {
 	return &dashboardCache{
-		ready: make(chan struct{}),
+		completed: make(map[string]time.Time),
+		ready:     make(chan struct{}),
+	}
+}
+
+func (c *dashboardCache) pruneCompletedLocked(now time.Time) {
+	for issueID, expiresAt := range c.completed {
+		if !expiresAt.After(now) {
+			delete(c.completed, issueID)
+		}
+	}
+}
+
+func (c *dashboardCache) filterCompletedLinearLocked(data *DashboardData, now time.Time) {
+	c.pruneCompletedLocked(now)
+	if len(c.completed) == 0 {
+		return
+	}
+
+	for providerIndex := range data.Providers {
+		provider := &data.Providers[providerIndex]
+		if provider.Name != "Linear" {
+			continue
+		}
+
+		for listIndex := range provider.Lists {
+			list := &provider.Lists[listIndex]
+			filtered := list.Items[:0]
+			for _, item := range list.Items {
+				if _, hidden := c.completed[item.Identifier]; hidden {
+					continue
+				}
+				if _, hidden := c.completed[item.IssueID]; hidden {
+					continue
+				}
+				filtered = append(filtered, item)
+			}
+			if len(filtered) == 0 {
+				filtered = append(filtered, ListItem{Text: "(none)"})
+			}
+			list.Items = filtered
+		}
 	}
 }
 
@@ -1797,7 +1860,7 @@ func (c *dashboardCache) getOrRefresh(cfg *Config) DashboardData {
 	ready := c.ready
 	c.mu.RUnlock()
 
-	if !fetchedAt.IsZero() && time.Since(fetchedAt) < 30*time.Second {
+	if !fetchedAt.IsZero() && time.Since(fetchedAt) < 5*time.Second {
 		return data
 	}
 
@@ -1827,10 +1890,12 @@ func (c *dashboardCache) startRefresh(cfg *Config) {
 
 	go func() {
 		data := buildDashboardData(cfg)
+		now := time.Now()
 
 		c.mu.Lock()
+		c.filterCompletedLinearLocked(&data, now)
 		c.data = data
-		c.fetchedAt = time.Now()
+		c.fetchedAt = now
 		if c.ready != nil {
 			close(c.ready)
 			c.ready = nil
@@ -1866,7 +1931,7 @@ func main() {
 		}
 
 		http.HandleFunc("/", handler)
-		http.HandleFunc("/linear/done", linearDoneHandler(cfg))
+		http.HandleFunc("/linear/done", linearDoneHandler(cfg, cache))
 		addr := fmt.Sprintf(":%d", cfg.Server.Port)
 		fmt.Printf("Starting KindleVibe server on http://localhost%s\n", addr)
 		if err := http.ListenAndServe(addr, nil); err != nil {
