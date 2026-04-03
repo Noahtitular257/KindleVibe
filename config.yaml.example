@@ -9,3 +9,5 @@ agents:
   linear:
     enabled: true
     token: ""
+  gemini:
+    enabled: true

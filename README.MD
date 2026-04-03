@@ -9,7 +9,7 @@ KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Line
 - **Kindle optimized:** Minimal, high-contrast UI for e-ink browsers.
 - **Portrait dashboard:** Single-screen layout tuned for a 1080 x 1440 Kindle display.
 - **Auto-refresh:** Refreshes every 10 seconds with standard HTML meta refresh.
-- **Current providers:** GitHub Copilot, Codex, and Linear.
+- **Current providers:** GitHub Copilot, Codex, Linear, and Gemini.
 - **Exchange snapshot:** Also renders BTC/USD, USD/CNY, and AUD/CNY at the bottom of the screen.
 - **Local-only:** Reads usage from local auth state and local session files.
 - **Simple startup:** `make` rebuilds and starts the server.
@@ -19,6 +19,7 @@ KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Line
 - Go 1.21 or later.
 - GitHub Copilot authenticated locally.
 - Codex installed and used locally so session files exist.
+- Gemini CLI installed and authenticated locally.
 
 ## Getting Started
 

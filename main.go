@@ -12,8 +12,11 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,6 +41,9 @@ type Config struct {
 			Enabled bool   `yaml:"enabled"`
 			Token   string `yaml:"token"`
 		} `yaml:"linear"`
+		Gemini struct {
+			Enabled bool `yaml:"enabled"`
+		} `yaml:"gemini"`
 	} `yaml:"agents"`
 }
 
@@ -199,7 +205,7 @@ type linearIssueNode struct {
 
 const (
 	indexTemplatePath = "index.html"
-	meterSegments     = 48
+	meterSegments     = 10
 	linearListMax     = 10
 )
 
@@ -293,7 +299,7 @@ func fetchCopilotStats(cfg *Config) (AgentStats, error) {
 	}
 
 	if usage.CopilotPlan != "" {
-		stats.Detail = "Plan: " + titleCase(usage.CopilotPlan)
+		stats.Detail = titleCase(usage.CopilotPlan)
 	}
 
 	bars, err := copilotUsageBars(usage)
@@ -393,6 +399,439 @@ func fetchLinearStats(cfg *Config) (AgentStats, error) {
 	)
 
 	return stats, nil
+}
+
+type geminiQuotaBucket struct {
+	RemainingFraction float64 `json:"remainingFraction"`
+	ResetTime         string  `json:"resetTime"`
+	ModelID           string  `json:"modelId"`
+}
+
+type geminiQuotaResponse struct {
+	Buckets []geminiQuotaBucket `json:"buckets"`
+}
+
+type geminiModelQuota struct {
+	ModelID          string
+	PercentLeft      float64
+	ResetDescription string
+}
+
+type geminiOAuthCredentials struct {
+	AccessToken  string  `json:"access_token"`
+	RefreshToken string  `json:"refresh_token"`
+	IDToken      string  `json:"id_token"`
+	ExpiryDate   float64 `json:"expiry_date"`
+}
+
+type geminiRefreshResponse struct {
+	AccessToken string    `json:"access_token"`
+	ExpiresIn   flexFloat `json:"expires_in"`
+	IDToken     string    `json:"id_token"`
+}
+
+// fetchGeminiStats reads Gemini CLI OAuth credentials and fetches user quota via Google Cloud Code API.
+func fetchGeminiStats() (AgentStats, error) {
+	stats := AgentStats{Name: "Gemini", IsRunning: true}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return stats, err
+	}
+
+	credsPath := filepath.Join(home, ".gemini", "oauth_creds.json")
+	data, err := os.ReadFile(credsPath)
+	if err != nil {
+		return stats, fmt.Errorf("gemini credentials not found: %w", err)
+	}
+
+	var creds geminiOAuthCredentials
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return stats, fmt.Errorf("decode gemini credentials: %w", err)
+	}
+
+	if creds.AccessToken == "" {
+		return stats, fmt.Errorf("gemini access token missing")
+	}
+
+	accessToken := creds.AccessToken
+	if creds.ExpiryDate > 0 && float64(time.Now().UnixMilli()) > creds.ExpiryDate {
+		if creds.RefreshToken == "" {
+			return stats, fmt.Errorf("gemini access token expired")
+		}
+		refreshedToken, err := refreshGeminiAccessToken(credsPath, creds.RefreshToken, 10*time.Second)
+		if err != nil {
+			return stats, err
+		}
+		accessToken = refreshedToken
+	}
+
+	projectID := loadGeminiProjectID(accessToken, 10*time.Second)
+	body := []byte("{}")
+	if projectID != "" {
+		if payload, err := json.Marshal(map[string]string{"project": projectID}); err == nil {
+			body = payload
+		}
+	}
+
+	req, err := http.NewRequest("POST", "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota", strings.NewReader(string(body)))
+	if err != nil {
+		return stats, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return stats, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return stats, fmt.Errorf("gemini api status: %s", resp.Status)
+	}
+
+	var quotaResp geminiQuotaResponse
+	if err := json.NewDecoder(resp.Body).Decode(&quotaResp); err != nil {
+		return stats, fmt.Errorf("decode gemini quota: %w", err)
+	}
+
+	proMin := selectGeminiQuotaBucket(quotaResp.Buckets, func(id string) bool {
+		return strings.Contains(id, "pro")
+	})
+	flashMin := selectGeminiQuotaBucket(quotaResp.Buckets, func(id string) bool {
+		return strings.Contains(id, "flash") && !strings.Contains(id, "flash-lite")
+	})
+	flashLiteMin := selectGeminiQuotaBucket(quotaResp.Buckets, func(id string) bool {
+		return strings.Contains(id, "flash-lite")
+	})
+
+	if proMin != nil {
+		stats.Bars = append(stats.Bars, UsageBar{
+			Label:      "Pro",
+			Percentage: clampPercent((1.0 - proMin.RemainingFraction) * 100),
+			Reset:      formatGeminiReset(proMin.ResetTime),
+		})
+	}
+	if flashMin != nil {
+		stats.Bars = append(stats.Bars, UsageBar{
+			Label:      "Flash",
+			Percentage: clampPercent((1.0 - flashMin.RemainingFraction) * 100),
+			Reset:      formatGeminiReset(flashMin.ResetTime),
+		})
+	}
+	if flashLiteMin != nil {
+		stats.Bars = append(stats.Bars, UsageBar{
+			Label:      "Flash Lite",
+			Percentage: clampPercent((1.0 - flashLiteMin.RemainingFraction) * 100),
+			Reset:      formatGeminiReset(flashLiteMin.ResetTime),
+		})
+	}
+
+	return stats, nil
+}
+
+func refreshGeminiAccessToken(credsPath string, refreshToken string, timeout time.Duration) (string, error) {
+	oauthCreds, err := extractGeminiOAuthClientCredentials()
+	if err != nil {
+		return "", err
+	}
+
+	form := url.Values{}
+	form.Set("client_id", oauthCreds.ClientID)
+	form.Set("client_secret", oauthCreds.ClientSecret)
+	form.Set("refresh_token", refreshToken)
+	form.Set("grant_type", "refresh_token")
+
+	req, err := http.NewRequest("POST", "https://oauth2.googleapis.com/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gemini token refresh failed: %s", resp.Status)
+	}
+
+	var refreshResp geminiRefreshResponse
+	if err := json.Unmarshal(body, &refreshResp); err != nil {
+		return "", fmt.Errorf("decode gemini refresh response: %w", err)
+	}
+	if refreshResp.AccessToken == "" {
+		return "", fmt.Errorf("gemini token refresh returned no access token")
+	}
+
+	if err := updateGeminiCredentials(credsPath, refreshResp); err != nil {
+		log.Printf("Gemini Warning: could not update credentials: %v", err)
+	}
+
+	return refreshResp.AccessToken, nil
+}
+
+type geminiOAuthClientCredentials struct {
+	ClientID     string
+	ClientSecret string
+}
+
+func extractGeminiOAuthClientCredentials() (geminiOAuthClientCredentials, error) {
+	binaryPath, err := exec.LookPath("gemini")
+	if err != nil {
+		return geminiOAuthClientCredentials{}, fmt.Errorf("gemini CLI not found on PATH: %w", err)
+	}
+
+	realPath := binaryPath
+	if resolved, err := filepath.EvalSymlinks(binaryPath); err == nil && resolved != "" {
+		realPath = resolved
+	}
+
+	binDir := filepath.Dir(realPath)
+	baseDir := filepath.Dir(binDir)
+	oauthFile := "dist/src/code_assist/oauth2.js"
+
+	candidates := []string{
+		filepath.Join(baseDir, "libexec/lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core", oauthFile),
+		filepath.Join(baseDir, "lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core", oauthFile),
+		filepath.Join(baseDir, "share/gemini-cli/node_modules/@google/gemini-cli-core", oauthFile),
+		filepath.Join(baseDir, "../gemini-cli-core", oauthFile),
+		filepath.Join(baseDir, "node_modules/@google/gemini-cli-core", oauthFile),
+	}
+
+	for _, candidate := range candidates {
+		content, err := os.ReadFile(filepath.Clean(candidate))
+		if err != nil {
+			continue
+		}
+		if creds, ok := parseGeminiOAuthClientCredentials(string(content)); ok {
+			return creds, nil
+		}
+	}
+
+	if creds, ok := scanGeminiBundleForOAuthCredentials(binDir); ok {
+		return creds, nil
+	}
+
+	return geminiOAuthClientCredentials{}, fmt.Errorf("gemini OAuth client credentials not found")
+}
+
+func scanGeminiBundleForOAuthCredentials(bundleDir string) (geminiOAuthClientCredentials, bool) {
+	info, err := os.Stat(bundleDir)
+	if err != nil || !info.IsDir() {
+		return geminiOAuthClientCredentials{}, false
+	}
+
+	var found geminiOAuthClientCredentials
+	walkErr := filepath.WalkDir(bundleDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() || !strings.HasSuffix(strings.ToLower(d.Name()), ".js") {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		if creds, ok := parseGeminiOAuthClientCredentials(string(content)); ok {
+			found = creds
+			return fs.SkipAll
+		}
+		return nil
+	})
+	if walkErr != nil && !errors.Is(walkErr, fs.SkipAll) {
+		return geminiOAuthClientCredentials{}, false
+	}
+	if found.ClientID != "" && found.ClientSecret != "" {
+		return found, true
+	}
+	return geminiOAuthClientCredentials{}, false
+}
+
+func parseGeminiOAuthClientCredentials(content string) (geminiOAuthClientCredentials, bool) {
+	clientIDPattern := `OAUTH_CLIENT_ID\s*=\s*['"]([\w\-\.]+)['"]\s*;`
+	clientSecretPattern := `OAUTH_CLIENT_SECRET\s*=\s*['"]([\w\-]+)['"]\s*;`
+
+	clientIDRegex, err := regexp.Compile(clientIDPattern)
+	if err != nil {
+		return geminiOAuthClientCredentials{}, false
+	}
+	clientSecretRegex, err := regexp.Compile(clientSecretPattern)
+	if err != nil {
+		return geminiOAuthClientCredentials{}, false
+	}
+
+	clientIDMatch := clientIDRegex.FindStringSubmatch(content)
+	clientSecretMatch := clientSecretRegex.FindStringSubmatch(content)
+	if len(clientIDMatch) < 2 || len(clientSecretMatch) < 2 {
+		return geminiOAuthClientCredentials{}, false
+	}
+
+	return geminiOAuthClientCredentials{
+		ClientID:     clientIDMatch[1],
+		ClientSecret: clientSecretMatch[1],
+	}, true
+}
+
+func updateGeminiCredentials(credsPath string, refreshResp geminiRefreshResponse) error {
+	existing, err := os.ReadFile(credsPath)
+	if err != nil {
+		return err
+	}
+
+	var jsonData map[string]any
+	if err := json.Unmarshal(existing, &jsonData); err != nil {
+		return err
+	}
+
+	jsonData["access_token"] = refreshResp.AccessToken
+	if refreshResp.IDToken != "" {
+		jsonData["id_token"] = refreshResp.IDToken
+	}
+	if refreshResp.ExpiresIn.Valid {
+		jsonData["expiry_date"] = (time.Now().Add(time.Duration(refreshResp.ExpiresIn.Value) * time.Second).UnixMilli())
+	}
+
+	updated, err := json.MarshalIndent(jsonData, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(credsPath, append(updated, '\n'), 0o600)
+}
+
+func loadGeminiProjectID(accessToken string, timeout time.Duration) string {
+	if projectID := loadGeminiCodeAssistProjectID(accessToken, timeout); projectID != "" {
+		return projectID
+	}
+	return discoverGeminiProjectID(accessToken, timeout)
+}
+
+func loadGeminiCodeAssistProjectID(accessToken string, timeout time.Duration) string {
+	req, err := http.NewRequest("POST", "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", strings.NewReader(`{"metadata":{"ideType":"GEMINI_CLI","pluginType":"GEMINI"}}`))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return ""
+	}
+
+	if project, ok := payload["cloudaicompanionProject"].(string); ok {
+		if project = strings.TrimSpace(project); project != "" {
+			return project
+		}
+	}
+	if project, ok := payload["cloudaicompanionProject"].(map[string]any); ok {
+		if id, ok := project["id"].(string); ok {
+			if id = strings.TrimSpace(id); id != "" {
+				return id
+			}
+		}
+		if id, ok := project["projectId"].(string); ok {
+			if id = strings.TrimSpace(id); id != "" {
+				return id
+			}
+		}
+	}
+
+	return ""
+}
+
+func discoverGeminiProjectID(accessToken string, timeout time.Duration) string {
+	req, err := http.NewRequest("GET", "https://cloudresourcemanager.googleapis.com/v1/projects", nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	var payload struct {
+		Projects []map[string]any `json:"projects"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return ""
+	}
+
+	for _, project := range payload.Projects {
+		projectID, _ := project["projectId"].(string)
+		projectID = strings.TrimSpace(projectID)
+		if projectID == "" {
+			continue
+		}
+		if strings.HasPrefix(projectID, "gen-lang-client") {
+			return projectID
+		}
+		if labels, ok := project["labels"].(map[string]any); ok && labels["generative-language"] != nil {
+			return projectID
+		}
+	}
+
+	return ""
+}
+
+func selectGeminiQuotaBucket(buckets []geminiQuotaBucket, match func(string) bool) *geminiQuotaBucket {
+	var selected *geminiQuotaBucket
+	for i := range buckets {
+		b := &buckets[i]
+		id := strings.ToLower(strings.TrimSpace(b.ModelID))
+		if id == "" || !match(id) {
+			continue
+		}
+		if selected == nil || b.RemainingFraction < selected.RemainingFraction {
+			selected = b
+		}
+	}
+	return selected
+}
+
+func formatGeminiReset(iso string) string {
+	if iso == "" {
+		return ""
+	}
+	// Try parsing with fractional seconds first (standard for this API)
+	layouts := []string{time.RFC3339Nano, time.RFC3339}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, iso); err == nil {
+			return t.Local().Format("2006-01-02 15:04")
+		}
+	}
+	return iso
 }
 
 // resolveLinearToken finds a Linear API token from local environment variables.
@@ -649,6 +1088,8 @@ func displayAgentName(name string) string {
 		return "CODEX"
 	case "linear":
 		return "LINEAR"
+	case "gemini":
+		return "GEMINI"
 	default:
 		return strings.ToUpper(strings.TrimSpace(name))
 	}
@@ -659,7 +1100,7 @@ func providerMeta(bar UsageBar) string {
 	reset := compactResetText(bar.Reset)
 	switch {
 	case reset != "":
-		return "RESET " + reset
+		return "↻ " + reset
 	default:
 		return ""
 	}
@@ -694,6 +1135,9 @@ func compactResetText(value string) string {
 
 // meterFill expands a percent value into a fixed-width list of filled and empty meter segments.
 func meterFill(percentage int, total int) []MeterSegment {
+	if total <= 0 {
+		total = meterSegments
+	}
 	segments := make([]MeterSegment, total)
 	filled := int(math.Round((float64(clampPercent(float64(percentage))) / 100) * float64(total)))
 	for i := 0; i < total; i++ {
@@ -957,7 +1401,7 @@ func codexRateLimitsFromFile(path string) (codexRateLimits, error) {
 func codexDetail(rateLimits codexRateLimits) string {
 	var details []string
 	if rateLimits.PlanType != "" {
-		details = append(details, "Plan: "+strings.ToUpper(rateLimits.PlanType[:1])+rateLimits.PlanType[1:])
+		details = append(details, strings.ToUpper(rateLimits.PlanType[:1])+rateLimits.PlanType[1:])
 	}
 	if rateLimits.Credits != nil {
 		switch {
@@ -1216,6 +1660,13 @@ func main() {
 				s, err := fetchLinearStats(cfg)
 				if err != nil {
 					log.Printf("Linear Error: %v", err)
+				}
+				agents = append(agents, s)
+			}
+			if cfg.Agents.Gemini.Enabled {
+				s, err := fetchGeminiStats()
+				if err != nil {
+					log.Printf("Gemini Error: %v", err)
 				}
 				agents = append(agents, s)
 			}

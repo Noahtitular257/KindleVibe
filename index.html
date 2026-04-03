@@ -44,29 +44,26 @@
 
       .provider {
         border: 3px solid #1d1d1b;
-        padding: 10px 12px 2px 12px;
+        padding: 10px 12px 10px 12px;
         margin-bottom: 10px;
-      }
-
-      .provider-header {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 8px;
       }
 
       .provider-name {
         color: #000;
-        font-size: 25px;
+        font-size: 23px;
         font-weight: bold;
         line-height: 40px;
         text-align: left;
+        margin-bottom: 8px;
       }
 
       .provider-detail {
-        color: #333;
+        color: #ccc;
         font-size: 15px;
-        line-height: 16px;
-        text-align: right;
+        font-weight: bold;
+        line-height: 30px;
+        text-align: left;
+        margin-top: 8px;
       }
 
       .bar-row {
@@ -75,8 +72,7 @@
 
       .bar-label {
         color: #666;
-        font-size: 17px;
-        line-height: 18px;
+        font-size: 14px;
         text-align: left;
         margin-bottom: 3px;
       }
@@ -107,23 +103,14 @@
 
       .bar-track {
         width: 100%;
-        font-size: 0;
-        line-height: 0;
-        white-space: nowrap;
-        overflow: hidden;
+        display: flex;
+        gap: 2px;
       }
 
       .segment {
-        display: inline-block;
-        width: calc((100% - 47px) / 48);
-        min-width: 2px;
-        height: 16px;
-        margin-right: 1px;
+        flex: 1;
+        height: 18px;
         background: #d6d2cc;
-      }
-
-      .segment.last {
-        margin-right: 0;
       }
 
       .segment.filled {
@@ -262,27 +249,15 @@
   </head>
   <body>
     <div class="frame">
-      {{/* Split providers into bar-type (Copilot/Codex) and list-type (Linear) */}}
-      {{ $barProviders := slice }}
-      {{ $listProviders := slice }}
-      {{ range .Providers }}
-        {{ if .Lists }}
-          {{ $listProviders = append $listProviders . }}
-        {{ else }}
-          {{ $barProviders = append $barProviders . }}
-        {{ end }}
-      {{ end }}
-
-      {{ if gt (len $barProviders) 1 }}
+      {{/* Split providers into bar-type (Copilot/Codex) and list-type (Linear)
+      */}} {{ $barProviders := slice }} {{ $listProviders := slice }} {{ range
+      .Providers }} {{ if .Lists }} {{ $listProviders = append $listProviders .
+      }} {{ else }} {{ $barProviders = append $barProviders . }} {{ end }} {{
+      end }} {{ if gt (len $barProviders) 1 }}
       <div class="provider-row">
         {{ range $barProviders }}
         <div class="provider">
-          <table class="provider-header">
-            <tr>
-              <td class="provider-name">{{ .Name }}</td>
-              <td class="provider-detail">{{ .Detail }}</td>
-            </tr>
-          </table>
+          <div class="provider-name">{{ .Name }}</div>
 
           {{ range .Bars }}
           <div class="bar-row">
@@ -292,7 +267,7 @@
                 <div class="bar-track">
                   {{ range $index, $segment := .Segments }}
                   <span
-                    class="segment{{ if $segment.Filled }} filled{{ end }}{{ if eq $index 47 }} last{{ end }}"
+                    class="segment{{ if $segment.Filled }} filled{{ end }}"
                   ></span>
                   {{ end }}
                 </div>
@@ -303,19 +278,15 @@
             </div>
             <div class="bar-meta">{{ .Meta }}</div>
           </div>
+          {{ end }} {{ if .Detail }}
+          <div class="provider-detail">{{ .Detail }}</div>
           {{ end }}
         </div>
         {{ end }}
       </div>
-      {{ else }}
-      {{ range $barProviders }}
+      {{ else }} {{ range $barProviders }}
       <div class="provider">
-        <table class="provider-header">
-          <tr>
-            <td class="provider-name">{{ .Name }}</td>
-            <td class="provider-detail">{{ .Detail }}</td>
-          </tr>
-        </table>
+        <div class="provider-name">{{ .Name }}</div>
 
         {{ range .Bars }}
         <div class="bar-row">
@@ -325,7 +296,7 @@
               <div class="bar-track">
                 {{ range $index, $segment := .Segments }}
                 <span
-                  class="segment{{ if $segment.Filled }} filled{{ end }}{{ if eq $index 47 }} last{{ end }}"
+                  class="segment{{ if $segment.Filled }} filled{{ end }}"
                 ></span>
                 {{ end }}
               </div>
@@ -336,19 +307,13 @@
           </div>
           <div class="bar-meta">{{ .Meta }}</div>
         </div>
+        {{ end }} {{ if .Detail }}
+        <div class="provider-detail">{{ .Detail }}</div>
         {{ end }}
       </div>
-      {{ end }}
-      {{ end }}
-
-      {{ range $listProviders }}
+      {{ end }} {{ end }} {{ range $listProviders }}
       <div class="provider">
-        <table class="provider-header">
-          <tr>
-            <td class="provider-name">{{ .Name }}</td>
-            <td class="provider-detail">{{ .Detail }}</td>
-          </tr>
-        </table>
+        <div class="provider-name">{{ .Name }}</div>
 
         {{ range .Lists }}
         <div class="list-row">
@@ -358,16 +323,20 @@
             {{ if .Identifier }}
             <form method="POST" action="/linear/done">
               <input type="hidden" name="id" value="{{ .Identifier }}" />
-              <input type="checkbox" id="cb-{{ .Identifier }}" onchange="this.form.submit()" />
+              <input
+                type="checkbox"
+                id="cb-{{ .Identifier }}"
+                onchange="this.form.submit()"
+              />
               &nbsp;
               <label for="cb-{{ .Identifier }}">{{ .Text }}</label>
             </form>
-            {{ else }}
-            {{ .Text }}
-            {{ end }}
+            {{ else }} {{ .Text }} {{ end }}
           </div>
           {{ end }}
         </div>
+        {{ end }} {{ if .Detail }}
+        <div class="provider-detail">{{ .Detail }}</div>
         {{ end }}
       </div>
       {{ end }}
