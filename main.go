@@ -26,6 +26,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type currencyPair struct {
+	Base  string `yaml:"base"`
+	Quote string `yaml:"quote"`
+}
+
 type Config struct {
 	Server struct {
 		Port int `yaml:"port"`
@@ -46,6 +51,9 @@ type Config struct {
 			Enabled bool `yaml:"enabled"`
 		} `yaml:"gemini"`
 	} `yaml:"agents"`
+	Exchange struct {
+		Pairs []currencyPair `yaml:"pairs"`
+	} `yaml:"exchange"`
 }
 
 type UsageBar struct {
@@ -111,10 +119,11 @@ type ExchangeRateRow struct {
 }
 
 type DashboardData struct {
-	Providers []ProviderPanel
-	Rates     []ExchangeRateRow
-	Time      string
-	Runtime   string
+	Providers  []ProviderPanel
+	LeftRates  []ExchangeRateRow
+	RightRates []ExchangeRateRow
+	Time       string
+	Runtime    string
 }
 
 type dashboardCache struct {
@@ -196,11 +205,6 @@ type flexFloat struct {
 	Valid bool
 }
 
-type currencyPair struct {
-	Base  string
-	Quote string
-}
-
 type linearGraphQLRequest struct {
 	Query     string         `json:"query"`
 	Variables map[string]any `json:"variables,omitempty"`
@@ -257,12 +261,6 @@ const (
 	linearListMax           = 10
 	linearCompletedCacheTTL = time.Minute
 )
-
-var defaultExchangePairs = []currencyPair{
-	{Base: "BTC", Quote: "USD"},
-	{Base: "USD", Quote: "CNY"},
-	{Base: "AUD", Quote: "CNY"},
-}
 
 // expandPath resolves shell-style home and environment references in local file paths.
 func expandPath(path string) string {
@@ -467,12 +465,12 @@ func fetchLinearStats(cfg *Config) (AgentStats, error) {
 	todoNodes := result.Data.Todo.Nodes
 	inProgressNodes := result.Data.InProgress.Nodes
 
-	todoLimit := 5
-	inProgressLimit := 5
+	todoLimit := 4
+	inProgressLimit := 4
 
 	if len(todoNodes) > 0 && len(inProgressNodes) > 0 {
-		todoLimit = 4
-		inProgressLimit = 4
+		todoLimit = 3
+		inProgressLimit = 3
 	}
 
 	if len(inProgressNodes) > 0 {
@@ -1306,13 +1304,24 @@ func (f *flexFloat) UnmarshalJSON(data []byte) error {
 }
 
 // fetchExchangeRates collects the configured exchange rows while tolerating individual upstream failures.
-func fetchExchangeRates() ([]ExchangeRateRow, error) {
+func fetchExchangeRates(cfg *Config) ([]ExchangeRateRow, error) {
 	client := &http.Client{Timeout: 8 * time.Second}
 	cache := make(map[string]map[string]float64)
-	rows := make([]ExchangeRateRow, 0, len(defaultExchangePairs))
+	pairs := cfg.Exchange.Pairs
+	if len(pairs) == 0 {
+		pairs = []currencyPair{
+			{Base: "BTC", Quote: "USD"},
+			{Base: "USD", Quote: "CNY"},
+			{Base: "AUD", Quote: "CNY"},
+			{Base: "JPY", Quote: "CNY"},
+			{Base: "CAD", Quote: "CNY"},
+			{Base: "HKD", Quote: "CNY"},
+		}
+	}
+	rows := make([]ExchangeRateRow, 0, len(pairs))
 
 	var lastErr error
-	for _, pair := range defaultExchangePairs {
+	for _, pair := range pairs {
 		base := strings.ToLower(pair.Base)
 		quote := strings.ToLower(pair.Quote)
 
@@ -1804,9 +1813,16 @@ func buildDashboardData(cfg *Config) DashboardData {
 		agents = append(agents, s)
 	}
 
-	rates, err := fetchExchangeRates()
+	rates, err := fetchExchangeRates(cfg)
 	if err != nil {
 		log.Printf("Rates Error: %v", err)
+	}
+
+	half := (len(rates) + 1) / 2
+	var leftRates, rightRates []ExchangeRateRow
+	if len(rates) > 0 {
+		leftRates = rates[:half]
+		rightRates = rates[half:]
 	}
 
 	providers := make([]ProviderPanel, 0, len(agents))
@@ -1815,10 +1831,11 @@ func buildDashboardData(cfg *Config) DashboardData {
 	}
 
 	return DashboardData{
-		Providers: providers,
-		Rates:     rates,
-		Time:      time.Now().Format("15:04:05"),
-		Runtime:   "RUNTIME_01",
+		Providers:  providers,
+		LeftRates:  leftRates,
+		RightRates: rightRates,
+		Time:       time.Now().Format("15:04:05"),
+		Runtime:    "RUNTIME_01",
 	}
 }
 

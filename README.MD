@@ -10,7 +10,7 @@ KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Line
 - **Portrait dashboard:** Single-screen layout tuned for a 1080 x 1440 Kindle display.
 - **Auto-refresh:** Refreshes every 10 seconds with standard HTML meta refresh.
 - **Current providers:** GitHub Copilot, Codex, Linear, and Gemini.
-- **Exchange snapshot:** Also renders BTC/USD, USD/CNY, and AUD/CNY at the bottom of the screen.
+- **Exchange snapshot:** Configurable via `config.yaml` to display up to 2 columns of exchange rates at the bottom. Default includes BTC/USD, USD/CNY, AUD/CNY, JPY/CNY, CAD/CNY, and HKD/CNY.
 - **Local-only:** Reads usage from local auth state and local session files.
 - **Simple startup:** `make` rebuilds and starts the server.
 
@@ -72,6 +72,22 @@ agents:
   linear:
     enabled: true
     token: ""
+  gemini:
+    enabled: true
+exchange:
+  pairs:
+    - base: "BTC"
+      quote: "USD"
+    - base: "USD"
+      quote: "CNY"
+    - base: "AUD"
+      quote: "CNY"
+    - base: "JPY"
+      quote: "CNY"
+    - base: "CAD"
+      quote: "CNY"
+    - base: "HKD"
+      quote: "CNY"
 ```
 
 `config.yaml` only controls which providers are shown and which port the server listens on.
@@ -212,11 +228,14 @@ The Linear query is scoped to issues assigned to you (`isMe: true`) and fetches 
 
 ### Exchange Rates
 
-KindleVibe also fetches a small set of reference exchange rates for the footer section:
+KindleVibe fetches reference exchange rates for the footer section, which can be configured under `exchange.pairs` in your `config.yaml`. By default, it displays:
 
 - `BTC/USD`
 - `USD/CNY`
 - `AUD/CNY`
+- `JPY/CNY`
+- `CAD/CNY`
+- `HKD/CNY`
 
 The fetch order is:
 

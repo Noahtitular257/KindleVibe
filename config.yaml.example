@@ -11,3 +11,17 @@ agents:
     token: ""
   gemini:
     enabled: true
+exchange:
+  pairs:
+    - base: "BTC"
+      quote: "USD"
+    - base: "USD"
+      quote: "CNY"
+    - base: "AUD"
+      quote: "CNY"
+    - base: "JPY"
+      quote: "CNY"
+    - base: "CAD"
+      quote: "CNY"
+    - base: "HKD"
+      quote: "CNY"
