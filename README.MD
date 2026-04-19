@@ -2,7 +2,8 @@
 
 KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Linear activity in a Kindle-friendly web page. It is designed for e-ink screens: high contrast, portrait-friendly layout, large typography, and automatic refresh.
 
-![Demo](demo.jpg)
+![Demo1](demo1.jpg)
+![Demo2](demo2.jpg)
 
 ## Features
 
@@ -21,7 +22,7 @@ KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Line
 - GitHub Copilot authenticated locally.
 - Codex installed and used locally so session files exist.
 - Gemini CLI installed and authenticated locally.
-- Claude Code installed and authenticated locally.
+- Claude Code installed, authenticated, and able to answer a local prompt.
 - A Claude ACP adapter, either installed as `claude-agent-acp` or available through `npx`.
 
 ## Getting Started
@@ -58,6 +59,71 @@ KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Line
    ```text
    http://<your-local-ip>:8080
    ```
+
+## Activating Claude Code ACP
+
+KindleVibe does not log in to Claude for you. Claude ACP works only after Claude Code already works for the same local user account that starts KindleVibe.
+
+1. **Install Claude Code**
+
+   If `claude` is not already available, install the Claude Code CLI:
+
+   ```bash
+   npm install -g @anthropic-ai/claude-code
+   ```
+
+2. **Sign in and verify Claude Code**
+
+   Start Claude Code and complete its login flow:
+
+   ```bash
+   claude
+   ```
+
+   Then verify that the CLI can answer a simple prompt:
+
+   ```bash
+   claude -p "Reply with OK."
+   ```
+
+   If this command does not work, fix Claude Code first. KindleVibe's ACP tab uses the same local Claude Code authentication state.
+
+3. **Make the Claude ACP adapter available**
+
+   Recommended global install:
+
+   ```bash
+   npm install -g @agentclientprotocol/claude-agent-acp
+   command -v claude-agent-acp
+   ```
+
+   Or rely on the built-in `npx` fallback. With the default config, KindleVibe will run:
+
+   ```bash
+   npx -y @agentclientprotocol/claude-agent-acp
+   ```
+
+4. **Enable Claude ACP in `config.yaml`**
+
+   ```yaml
+   agents:
+     claude_acp:
+       enabled: true
+       command: ""
+       args: []
+       cwd: ""
+   ```
+
+   Leave `command` empty to let KindleVibe try `claude-agent-acp` from `PATH` first and then fall back to `npx`.
+   Set `cwd` only if you want the Claude tab to open conversations for a specific project directory.
+
+5. **Run KindleVibe and open the Claude tab**
+
+   ```bash
+   make
+   ```
+
+   Open `http://<your-local-ip>:8080/claude` and send a short prompt. If the tab reports that Claude ACP is unavailable, check that `claude -p "Reply with OK."` works and that either `claude-agent-acp` or `npx` is available from the same shell where you run `make`.
 
 ## Configuration
 
@@ -118,12 +184,12 @@ KindleVibe reads provider data when the `/` page is requested. For each enabled 
 
 KindleVibe throttles upstream requests to avoid hammering external services on every page refresh:
 
-| Provider | Min interval between requests |
-|---|---|
-| GitHub Copilot | 2 minutes |
-| Codex | 2 minutes |
-| Gemini | 2 minutes |
-| Exchange rates | 10 minutes |
+| Provider       | Min interval between requests |
+| -------------- | ----------------------------- |
+| GitHub Copilot | 2 minutes                     |
+| Codex          | 2 minutes                     |
+| Gemini         | 2 minutes                     |
+| Exchange rates | 10 minutes                    |
 
 Between fetches the dashboard renders the last known values. Linear issues are always fetched fresh on each dashboard rebuild since they reflect live task state.
 
