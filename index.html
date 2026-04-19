@@ -6,6 +6,9 @@
     <title>KindleVibe</title>
     <script>
       var refreshTimer = null;
+      var claudeTimer = null;
+      var currentTab = "{{ .Tab }}";
+      var claudeWasRunning = false;
 
       function applyLinearCap(root) {
         var providers = root.querySelectorAll('.provider');
@@ -87,12 +90,336 @@
 
       function scheduleNext() {
         clearTimeout(refreshTimer);
+        if (currentTab !== "dashboard") return;
         refreshTimer = setTimeout(pollFragment, 15000);
       }
 
+      function selectedClaudeSession() {
+        var shell = document.querySelector("[data-claude-session]");
+        if (!shell) return "";
+        return shell.getAttribute("data-claude-session") || "";
+      }
+
+      function setSelectedClaudeSession(sessionId) {
+        var content = document.querySelector("[data-claude-session]");
+        if (content) content.setAttribute("data-claude-session", sessionId || "");
+        var input = document.querySelector('.chat-box input[name="session_id"]');
+        if (input) input.value = sessionId || "";
+        var modelSession = document.querySelector('.model-form input[name="session_id"]');
+        if (modelSession) modelSession.value = sessionId || "";
+      }
+
+      function countMessages(root) {
+        if (!root) return 0;
+        return root.querySelectorAll(".message").length;
+      }
+
+      function pollClaude() {
+        var shell = document.querySelector(".claude-shell");
+        var content = shell ? shell.querySelector("[data-claude-running]") : null;
+        var isRunning = content && content.getAttribute("data-claude-running") === "true";
+        if (!shell || !content || (!isRunning && !claudeWasRunning)) {
+          scheduleClaude();
+          return;
+        }
+        var sessionId = selectedClaudeSession();
+        var xhr = new XMLHttpRequest();
+        xhr.open(
+          "GET",
+          "/claude/fragment?session_id=" + encodeURIComponent(sessionId),
+          true
+        );
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+              var tmp = document.createElement("div");
+              tmp.innerHTML = xhr.responseText;
+              var newRunning = tmp.querySelector("[data-claude-running]");
+              var nowRunning = newRunning && newRunning.getAttribute("data-claude-running") === "true";
+              var oldCount = countMessages(shell);
+              var newCount = countMessages(tmp);
+              if (newCount < oldCount && (nowRunning || claudeWasRunning)) {
+                claudeWasRunning = true;
+              } else {
+                var frame = document.querySelector(".frame.claude-frame");
+                var atBottom = frame && (frame.scrollHeight - frame.scrollTop - frame.clientHeight < 60);
+                shell.innerHTML = xhr.responseText;
+                setupClaudeForm();
+                setupHistoryMenu();
+                setupHistoryLinks();
+                syncClaudeModelFromContent();
+                if (frame && atBottom) frame.scrollTop = frame.scrollHeight;
+                claudeWasRunning = nowRunning;
+              }
+            } else {
+              claudeWasRunning = false;
+            }
+            scheduleClaude();
+          }
+        };
+        xhr.onerror = function () {
+          claudeWasRunning = false;
+          scheduleClaude();
+        };
+        xhr.send();
+      }
+
+      function pollClaudeNow() {
+        clearTimeout(claudeTimer);
+        pollClaude();
+      }
+
+      function scheduleClaude() {
+        clearTimeout(claudeTimer);
+        if (currentTab !== "claude") return;
+        claudeTimer = setTimeout(pollClaude, 7000);
+      }
+
+      function escapeHTML(text) {
+        return String(text)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function renderPendingClaudePrompt(prompt) {
+        var content = document.querySelector("[data-claude-running]");
+        var conversation = document.querySelector(".claude-conversation");
+        if (!content || !conversation) return;
+        content.setAttribute("data-claude-running", "true");
+        var status = conversation.querySelector(".claude-status");
+        if (status) status.parentNode.removeChild(status);
+        var pending =
+          '<div class="message message-user">' +
+          '<div class="message-text">' +
+          escapeHTML(prompt) +
+          "</div></div>" +
+          '<div class="thinking-hint">Claude is thinking<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span></div>';
+        conversation.insertAdjacentHTML("beforeend", pending);
+        var frame = document.querySelector(".frame.claude-frame");
+        if (frame) frame.scrollTop = frame.scrollHeight;
+      }
+
+      function setupClaudeForm() {
+        var form = document.querySelector(".chat-box");
+        if (!form || !window.XMLHttpRequest) return;
+        form.onsubmit = function (event) {
+          event.preventDefault();
+          var textarea = form.querySelector("textarea");
+          var prompt = textarea ? textarea.value.replace(/^\s+|\s+$/g, "") : "";
+          if (!prompt) return false;
+
+          var sessionId = selectedClaudeSession();
+          if (isClaudeResumeCommand(prompt)) {
+            if (textarea) textarea.value = "";
+            openHistoryPanel();
+            return false;
+          }
+
+          renderPendingClaudePrompt(prompt);
+          if (textarea) textarea.value = "";
+          claudeWasRunning = true;
+
+          var button = form.querySelector("button");
+          if (button) button.disabled = true;
+
+          var body =
+            "session_id=" +
+            encodeURIComponent(sessionId) +
+            "&prompt=" +
+            encodeURIComponent(prompt);
+
+          var xhr = new XMLHttpRequest();
+          xhr.open("POST", "/claude/send", true);
+          xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+          xhr.setRequestHeader("Accept", "application/json");
+          xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            if (button) button.disabled = false;
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                var payload = JSON.parse(xhr.responseText);
+                if (payload.command === "resume") {
+                  openHistoryPanel();
+                  return;
+                }
+                if (payload.session_id) {
+                  setSelectedClaudeSession(payload.session_id);
+                  if (window.history && window.history.pushState) {
+                    window.history.pushState(
+                      null,
+                      "",
+                      "/claude?session_id=" + encodeURIComponent(payload.session_id)
+                    );
+                  }
+                }
+              } catch (e) {}
+              pollClaudeNow();
+            } else {
+              location.reload();
+            }
+          };
+          xhr.send(body);
+          return false;
+        };
+      }
+
+      function isClaudeResumeCommand(prompt) {
+        var first = String(prompt || "").replace(/^\s+|\s+$/g, "").split(/\s+/)[0];
+        return first && first.toLowerCase() === "/resume";
+      }
+
+      function syncClaudeModelFromContent() {
+        var content = document.querySelector("[data-current-model]");
+        var select = document.querySelector('.model-form select[name="model"]');
+        if (!content || !select) return;
+        var model = content.getAttribute("data-current-model") || "";
+        if (!model) return;
+        var found = false;
+        for (var i = 0; i < select.options.length; i++) {
+          if (select.options[i].value === model) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          var option = document.createElement("option");
+          option.value = model;
+          option.text = model;
+          select.insertBefore(option, select.firstChild);
+        }
+        select.value = model;
+      }
+
+      function setupModelForm() {
+        var form = document.querySelector(".model-form");
+        if (!form || !window.XMLHttpRequest) return;
+        form.onchange = function () {
+          var select = form.querySelector('select[name="model"]');
+          if (!select) return false;
+          var sessionId = selectedClaudeSession();
+          var sessionInput = form.querySelector('input[name="session_id"]');
+          if (sessionInput) sessionInput.value = sessionId || "";
+          var body =
+            "session_id=" +
+            encodeURIComponent(sessionId) +
+            "&model=" +
+            encodeURIComponent(select.value);
+          var xhr = new XMLHttpRequest();
+          xhr.open("POST", "/claude/model", true);
+          xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+          xhr.setRequestHeader("Accept", "application/json");
+          xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            if (xhr.status < 200 || xhr.status >= 300) {
+              location.reload();
+            }
+          };
+          xhr.send(body);
+          return false;
+        };
+      }
+
+      function setupHistoryMenu() {
+        var button = document.querySelector(".history-button");
+        if (!button) return;
+        button.onclick = function () {
+          toggleHistoryPanel();
+        };
+      }
+
+      function openHistoryPanel() {
+        var panel = document.querySelector(".history-panel");
+        var button = document.querySelector(".history-button");
+        if (!panel) return;
+        panel.style.display = "block";
+        if (button) button.setAttribute("aria-expanded", "true");
+      }
+
+      function toggleHistoryPanel() {
+        var panel = document.querySelector(".history-panel");
+        var button = document.querySelector(".history-button");
+        if (!panel) return;
+        var open = panel.style.display === "block";
+        panel.style.display = open ? "none" : "block";
+        if (button) button.setAttribute("aria-expanded", open ? "false" : "true");
+      }
+
+      function setupHistoryLinks() {
+        var links = document.querySelectorAll(".history-panel .session-link");
+        if (!links || !window.XMLHttpRequest) return;
+        for (var i = 0; i < links.length; i++) {
+          links[i].onclick = function (event) {
+            event.preventDefault();
+            var href = this.getAttribute("href") || "/claude";
+            var sessionId = "";
+            var marker = "session_id=";
+            var index = href.indexOf(marker);
+            if (index >= 0) {
+              sessionId = decodeURIComponent(href.substring(index + marker.length));
+            }
+
+            var panel = document.querySelector(".history-panel");
+            var button = document.querySelector(".history-button");
+            if (panel) panel.style.display = "none";
+            if (button) button.setAttribute("aria-expanded", "false");
+
+            var shell = document.querySelector(".claude-shell");
+            if (!shell) {
+              window.location.href = href;
+              return false;
+            }
+            shell.innerHTML =
+              '<div class="claude-content" data-claude-session="' +
+              escapeHTML(sessionId) +
+              '" data-claude-running="false">' +
+              '<div class="claude-status">Opening conversation...</div>' +
+              "</div>";
+            setSelectedClaudeSession(sessionId);
+
+            var xhr = new XMLHttpRequest();
+            xhr.open(
+              "GET",
+              "/claude/fragment?session_id=" + encodeURIComponent(sessionId),
+              true
+            );
+            xhr.onreadystatechange = function () {
+              if (xhr.readyState !== 4) return;
+              if (xhr.status === 200) {
+                shell.innerHTML = xhr.responseText;
+                setupClaudeForm();
+                setupHistoryMenu();
+                setupHistoryLinks();
+                syncClaudeModelFromContent();
+                if (window.history && window.history.pushState) {
+                  window.history.pushState(null, "", href);
+                }
+              } else {
+                window.location.href = href;
+              }
+            };
+            xhr.send();
+            return false;
+          };
+        }
+      }
+
       window.addEventListener("load", function () {
-        applyLinearCap(document.querySelector('.frame'));
-        scheduleNext();
+        if (currentTab === "dashboard") {
+          applyLinearCap(document.querySelector(".frame"));
+          scheduleNext();
+        } else {
+          setupClaudeForm();
+          setupHistoryMenu();
+          setupHistoryLinks();
+          setupModelForm();
+          syncClaudeModelFromContent();
+          scheduleClaude();
+        }
       });
 
       window.addEventListener("hashchange", function () {
@@ -116,11 +443,523 @@
         font-family: "Bookerly", "Palatino";
       }
 
+      body.claude-page {
+        background: #fff;
+        color: #000;
+      }
+
       .frame {
         width: auto;
         max-width: 760px;
         margin: 0 auto;
-        padding: 12px 14px 12px 14px;
+        padding: 50px 14px 24px 14px;
+      }
+
+      .frame.claude-frame {
+        padding-bottom: 132px;
+        height: calc(100vh - 98px);
+        overflow: auto;
+        box-sizing: border-box;
+      }
+
+      .top-nav {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 0;
+        z-index: 900;
+        height: 42px;
+        background: #fff;
+        border-bottom: 3px solid #ccc;
+        box-sizing: border-box;
+      }
+
+      body.claude-page .top-nav {
+        background: #fff;
+        border-bottom-color: #000;
+      }
+
+      .tab-bar {
+        position: absolute;
+        left: 50%;
+        top: 6px;
+        transform: translateX(-50%);
+        z-index: 901;
+        background: #fff;
+        border: 2px solid #ccc;
+        display: table;
+        width: 172px;
+        max-width: calc(100vw - 204px);
+        table-layout: fixed;
+      }
+
+      .tab-link {
+        display: table-cell;
+        color: #000;
+        text-decoration: none;
+        text-align: center;
+        font-size: 14px;
+        line-height: 18px;
+        font-weight: bold;
+        padding: 4px 4px;
+        border-right: 2px solid #ccc;
+      }
+
+      .tab-link:last-child {
+        border-right: 0;
+      }
+
+      .tab-link.active {
+        background: #000;
+        color: #fff;
+      }
+
+      body.claude-page .tab-bar,
+      body.claude-page .history-button {
+        background: #fff;
+        border-color: #000;
+      }
+
+      body.claude-page .tab-link {
+        color: #000;
+        border-right-color: #000;
+      }
+
+      body.claude-page .tab-link.active {
+        background: #fff;
+        color: #000;
+        text-decoration: underline;
+      }
+
+      body.claude-page .history-button {
+        background: #fff;
+        color: #000;
+      }
+
+      .history-button {
+        position: absolute;
+        top: 6px;
+        right: 12px;
+        z-index: 920;
+        appearance: none;
+        -webkit-appearance: none;
+        border: 2px solid #ccc;
+        background: #fff;
+        color: #000;
+        font: inherit;
+        font-size: 14px;
+        line-height: 18px;
+        font-weight: bold;
+        padding: 4px 10px;
+        border-radius: 0;
+        cursor: pointer;
+      }
+
+      .model-form {
+        position: absolute;
+        top: 4px;
+        left: 12px;
+        z-index: 920;
+        margin: 0;
+      }
+
+      .model-form select {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 2px solid #ccc;
+        background: #fff;
+        color: #000;
+        font: inherit;
+        font-size: 15px;
+        line-height: 22px;
+        font-weight: bold;
+        padding: 6px 24px 6px 8px;
+        border-radius: 0;
+        width: 142px;
+        max-width: 40vw;
+        min-height: 38px;
+      }
+
+      body.claude-page .model-form select {
+        background: #fff;
+        border-color: #000;
+        color: #000;
+      }
+
+      .history-panel {
+        display: none;
+        position: fixed;
+        top: 42px;
+        right: 12px;
+        z-index: 910;
+        width: 330px;
+        max-width: calc(100vw - 24px);
+        max-height: calc(100vh - 166px);
+        overflow: auto;
+        box-sizing: border-box;
+        border: 3px solid #000;
+        background: #fff;
+        padding: 10px;
+      }
+
+      body.claude-page .history-panel {
+        background: #fff;
+        border-color: #000;
+      }
+
+      .claude-shell {
+        display: block;
+      }
+
+      body.claude-page .claude-shell {
+        background-color: #fff;
+        min-height: calc(100vh - 174px);
+      }
+
+      .claude-layout {
+        display: block;
+      }
+
+      .claude-conversation {
+        display: block;
+        box-sizing: border-box;
+      }
+
+      .claude-heading {
+        font-size: 19px;
+        font-weight: bold;
+        line-height: 24px;
+        margin: 0 0 10px 0;
+      }
+
+      body.claude-page .claude-heading {
+        color: #000;
+      }
+
+      .claude-status {
+        border: 3px solid #ccc;
+        padding: 8px;
+        font-size: 15px;
+        line-height: 20px;
+        margin-bottom: 10px;
+      }
+
+      body.claude-page .claude-status {
+        background: #fff;
+        border-color: #000;
+        color: #000;
+      }
+
+      .session-link {
+        display: block;
+        color: #000;
+        text-decoration: none;
+        border: 2px solid #ccc;
+        padding: 7px 8px;
+        margin-bottom: 8px;
+      }
+
+      body.claude-page .session-link {
+        color: #000;
+        border-color: #000;
+        background: #fff;
+      }
+
+      .session-link.active {
+        border-color: #000;
+        background: #000;
+        color: #fff;
+      }
+
+      body.claude-page .session-link.active {
+        border-color: #000;
+        background: #fff;
+        color: #000;
+        text-decoration: underline;
+      }
+
+      .session-title {
+        display: block;
+        font-size: 15px;
+        line-height: 18px;
+        font-weight: bold;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .session-meta {
+        display: block;
+        font-size: 11px;
+        line-height: 14px;
+        margin-top: 3px;
+      }
+
+      .message {
+        margin-bottom: 26px;
+        border: 2px solid #ccc;
+        padding: 14px 18px;
+        box-sizing: border-box;
+      }
+
+      .message.loading-message {
+        border-color: #000;
+      }
+
+      body.claude-page .message {
+        color: #000;
+      }
+
+      body.claude-page .message-assistant {
+        position: relative;
+        width: 86%;
+        background: #f4f4f4;
+        border: 2px solid #000;
+        border-left: 7px solid #000;
+        margin-right: auto;
+        margin-left: 0;
+      }
+
+      body.claude-page .message-user {
+        width: 86%;
+        background: transparent;
+        border: 2px solid #000;
+        margin-left: auto;
+        margin-right: 0;
+      }
+
+      body.claude-page .message.loading-message {
+        border-color: #000;
+      }
+
+      .message-role {
+        color: #666;
+        font-size: 12px;
+        line-height: 15px;
+        font-weight: bold;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+
+      body.claude-page .message-role {
+        color: #333;
+        font-size: 12px;
+        line-height: 15px;
+        letter-spacing: 0.16em;
+      }
+
+      .model-tag {
+        color: #999;
+        font-weight: normal;
+        letter-spacing: normal;
+        font-size: 11px;
+      }
+
+      body.claude-page .message-user .message-role {
+        color: #000;
+      }
+
+      .message-text {
+        font-size: 15px;
+        line-height: 20px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      body.claude-page .message-text {
+        font-size: 15px;
+        line-height: 22px;
+        color: #000;
+        white-space: normal;
+      }
+
+      .message-text pre {
+        background: #f0f0f0;
+        border: 1px solid #ccc;
+        padding: 8px 10px;
+        overflow-x: auto;
+        white-space: pre;
+        font-size: 14px;
+        line-height: 20px;
+        margin: 8px 0;
+      }
+
+      body.claude-page .message-text pre {
+        background: #f0f0f0;
+        border-color: #999;
+      }
+
+      .message-text code {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 0.9em;
+      }
+
+      .message-text :not(pre) > code {
+        background: #f0f0f0;
+        padding: 1px 4px;
+        border: 1px solid #ddd;
+      }
+
+      .message-text h2,
+      .message-text h3,
+      .message-text h4 {
+        margin: 12px 0 6px 0;
+        line-height: 1.3;
+      }
+
+      .message-text h2 { font-size: 1.2em; }
+      .message-text h3 { font-size: 1.1em; }
+      .message-text h4 { font-size: 1em; }
+
+      .message-text ul,
+      .message-text ol {
+        margin: 6px 0;
+        padding-left: 24px;
+      }
+
+      .message-text li {
+        margin-bottom: 3px;
+      }
+
+      .message-text hr {
+        border: none;
+        border-top: 1px solid #ccc;
+        margin: 10px 0;
+      }
+
+      .message-text a {
+        color: #000;
+        text-decoration: underline;
+      }
+
+      .thinking-hint {
+        color: #999;
+        font-size: 13px;
+        line-height: 18px;
+        font-style: italic;
+        padding: 4px 0;
+        margin-bottom: 10px;
+      }
+
+      body.claude-page .thinking-hint {
+        color: #666;
+      }
+
+      .loading-dots {
+        display: inline-block;
+        margin-left: 2px;
+        letter-spacing: 2px;
+        font-weight: bold;
+      }
+
+      .tool-row,
+      .permission-box {
+        border: 2px solid #000;
+        padding: 8px;
+        margin-bottom: 10px;
+      }
+
+      body.claude-page .tool-row,
+      body.claude-page .permission-box {
+        background: #fff;
+        border-color: #000;
+        color: #000;
+      }
+
+      .tool-title,
+      .permission-title {
+        display: block;
+        font-size: 14px;
+        line-height: 18px;
+        font-weight: bold;
+      }
+
+      .tool-meta {
+        display: block;
+        color: #666;
+        font-size: 12px;
+        line-height: 16px;
+        margin-top: 3px;
+      }
+
+      .permission-actions {
+        display: block;
+        margin-top: 8px;
+      }
+
+      .permission-actions form {
+        display: inline-block;
+        margin: 0 6px 6px 0;
+      }
+
+      .permission-actions button,
+      .chat-send {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 3px solid #000;
+        background: #fff;
+        color: #000;
+        font: inherit;
+        font-weight: bold;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+
+      body.claude-page .permission-actions button,
+      body.claude-page .chat-send {
+        background: #fff;
+        border-color: #000;
+        color: #000;
+      }
+
+      .chat-box {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 880;
+        display: flex;
+        background: #fff;
+        border-top: 3px solid #ccc;
+        padding: 8px;
+        box-sizing: border-box;
+      }
+
+      body.claude-page .chat-box {
+        background: #fff;
+        border-top-color: #000;
+      }
+
+      .chat-box textarea {
+        flex: 1;
+        min-width: 0;
+        height: 72px;
+        resize: none;
+        border: 3px solid #ccc;
+        color: #000;
+        background: #fff;
+        font: inherit;
+        font-size: 17px;
+        line-height: 22px;
+        padding: 8px;
+        box-sizing: border-box;
+        border-radius: 0;
+      }
+
+      body.claude-page .chat-box textarea {
+        background: #fff;
+        border-color: #000;
+        color: #000;
+      }
+
+      .chat-send {
+        width: 96px;
+        margin-left: 8px;
+      }
+
+      .chat-send:disabled {
+        color: #666;
+        border-color: #999;
       }
 
       .provider-row {
@@ -483,7 +1322,16 @@
       .rate-line {
         display: flex;
         align-items: baseline;
+        justify-content: center;
         white-space: nowrap;
+      }
+
+      .rate-cell:first-child .rate-line {
+        justify-content: flex-start;
+      }
+
+      .rate-cell:last-child .rate-line {
+        justify-content: flex-end;
       }
 
       .rate-pair {
@@ -496,11 +1344,10 @@
 
       .rate-value {
         color: #000;
-        text-align: right;
         font-weight: bold;
         font-size: 13px;
         line-height: 14px;
-        margin-left: auto;
+        margin-left: 5px;
       }
 
       .rates-empty,
@@ -516,12 +1363,116 @@
       }
     </style>
   </head>
-  <body>
-    <div class="frame">
+  <body class="{{ if eq .Tab "claude" }}claude-page{{ end }}">
+    <div class="frame{{ if eq .Tab "claude" }} claude-frame{{ end }}">
+      {{ if eq .Tab "claude" }}
+      <div class="claude-shell">
+        {{template "claude-content" .Claude}}
+      </div>
+      {{ else }}
       {{template "frame-content" .}}
+      {{ end }}
+    </div>
+    <div class="top-nav">
+      {{ if eq .Tab "claude" }}
+      <form class="model-form" method="POST" action="/claude/model">
+        <input type="hidden" name="session_id" value="{{ .Claude.SelectedID }}" />
+        <select name="model" aria-label="Claude model">
+          {{ range .Claude.ModelOptions }}
+          <option value="{{ . }}"{{ if eq $.Claude.CurrentModel . }} selected{{ end }}>{{ . }}</option>
+          {{ end }}
+        </select>
+      </form>
+      {{ end }}
+      <div class="tab-bar">
+        <a class="tab-link{{ if ne .Tab "claude" }} active{{ end }}" href="/">Dashboard</a>
+        <a class="tab-link{{ if eq .Tab "claude" }} active{{ end }}" href="/claude">Claude</a>
+      </div>
+      {{ if eq .Tab "claude" }}
+      <button class="history-button" type="button" aria-expanded="false">
+        History
+      </button>
+      {{ end }}
     </div>
   </body>
 </html>
+{{define "claude-content"}}
+      <div
+        class="claude-content"
+        data-claude-session="{{ .SelectedID }}"
+        data-current-model="{{ .CurrentModel }}"
+        data-claude-running="{{ if .Conversation.Running }}true{{ else }}false{{ end }}"
+      >
+        {{ if .Error }}
+        <div class="claude-status">{{ .Error }}</div>
+        {{ end }}
+        <div class="claude-layout">
+          <div class="claude-conversation">
+            {{ if .Conversation.Error }}
+            <div class="claude-status">{{ .Conversation.Error }}</div>
+            {{ end }}
+            {{ range .Conversation.Permissions }}
+            <div class="permission-box">
+              <span class="permission-title">{{ .Title }}</span>
+              <div class="permission-actions">
+                {{ $permission := . }}
+                {{ range .Options }}
+                <form method="POST" action="/claude/permission">
+                  <input type="hidden" name="session_id" value="{{ $.Conversation.SessionID }}" />
+                  <input type="hidden" name="request_id" value="{{ $permission.ID }}" />
+                  <input type="hidden" name="option_id" value="{{ .ID }}" />
+                  <button type="submit">{{ .Name }}</button>
+                </form>
+                {{ end }}
+              </div>
+            </div>
+            {{ end }}
+            {{ range .Conversation.Tools }}
+            <div class="tool-row">
+              <span class="tool-title">{{ if .Title }}{{ .Title }}{{ else }}{{ .ID }}{{ end }}</span>
+              <span class="tool-meta">{{ .Kind }} {{ .Status }}</span>
+            </div>
+            {{ end }}
+            {{ if .Conversation.Messages }}
+            {{ range .Conversation.Messages }}
+            {{ if and .Loading (eq .Text "") }}
+            <div class="thinking-hint">Claude is thinking<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span></div>
+            {{ else }}
+            <div class="message message-{{ .Role }}{{ if .Loading }} loading-message{{ end }}">
+              {{ if eq .Role "assistant" }}<div class="message-role">Claude{{ if .Model }} <span class="model-tag">{{ .Model }}</span>{{ end }}</div>{{ end }}
+              <div class="message-text">{{ if .HTML }}{{ .HTML }}{{ else }}{{ .Text }}{{ end }}{{ if .Loading }}<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>{{ end }}</div>
+            </div>
+            {{ end }}
+            {{ end }}
+            {{ else }}
+            <div class="claude-status">Choose a recent conversation or send a prompt.</div>
+            {{ end }}
+          </div>
+        </div>
+      </div>
+      <div class="history-panel">
+        <a class="session-link{{ if not .SelectedID }} active{{ end }}" href="/claude">
+          <span class="session-title">New conversation</span>
+          <span class="session-meta">{{ .Cwd }}</span>
+        </a>
+        {{ range .Sessions }}
+        <a
+          class="session-link{{ if eq $.SelectedID .SessionID }} active{{ end }}"
+          href="/claude?session_id={{ .SessionID }}"
+        >
+          <span class="session-title">{{ if .Title }}{{ .Title }}{{ else }}{{ .SessionID }}{{ end }}</span>
+          <span class="session-meta">{{ relativeTime .UpdatedAt }}</span>
+        </a>
+        {{ end }}
+      </div>
+      {{ if .Enabled }}
+      <form class="chat-box" method="POST" action="/claude/send">
+        <input type="hidden" name="session_id" value="{{ .SelectedID }}" />
+        <textarea name="prompt" placeholder="Prompt Claude Code"></textarea>
+        <button class="chat-send" type="submit">SEND</button>
+      </form>
+      {{ end }}
+{{end}}
 {{define "frame-content"}}
       {{/* Split providers into bar-type (Copilot/Codex) and list-type (Linear)
       */}} {{ $barProviders := slice }} {{ $listProviders := slice }} {{ range

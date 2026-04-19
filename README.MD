@@ -9,7 +9,8 @@ KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Line
 - **Kindle optimized:** Minimal, high-contrast UI for e-ink browsers.
 - **Portrait dashboard:** Single-screen layout tuned for a 1080 x 1440 Kindle display.
 - **Auto-refresh:** Refreshes every 15 seconds with a background XHR poll.
-- **Current providers:** GitHub Copilot, Codex, Linear, and Gemini.
+- **Current providers:** GitHub Copilot, Codex, Linear, Gemini, and Claude Code ACP.
+- **Claude mini client:** A second tab lists recent Claude Code conversations, opens conversation messages, sends prompts, and surfaces pending permission actions.
 - **Exchange snapshot:** Configurable via `config.yaml` to display up to 2 rows of 3 exchange rates at the bottom. Default includes BTC/USD, USD/CNY, AUD/CNY, JPY/CNY, CAD/CNY, and HKD/CNY.
 - **Local-only:** Reads usage from local auth state and local session files.
 - **Simple startup:** `make` rebuilds and starts the server.
@@ -20,6 +21,8 @@ KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Line
 - GitHub Copilot authenticated locally.
 - Codex installed and used locally so session files exist.
 - Gemini CLI installed and authenticated locally.
+- Claude Code installed and authenticated locally.
+- A Claude ACP adapter, either installed as `claude-agent-acp` or available through `npx`.
 
 ## Getting Started
 
@@ -74,6 +77,11 @@ agents:
     token: ""
   gemini:
     enabled: true
+  claude_acp:
+    enabled: true
+    command: ""
+    args: []
+    cwd: ""
 exchange:
   pairs:
     - base: "BTC"
@@ -93,6 +101,14 @@ exchange:
 `config.yaml` only controls which providers are shown and which port the server listens on.
 Your local `config.yaml` can also include `agents.copilot.token` and `agents.linear.token`.
 `config.yaml` is gitignored for local-only secrets.
+
+For Claude Code ACP, leave `command` empty to use `claude-agent-acp` from `PATH`, or fall back to:
+
+```bash
+npx -y @agentclientprotocol/claude-agent-acp
+```
+
+Set `agents.claude_acp.cwd` if you want Claude conversations scoped to a different project directory. When empty, KindleVibe uses the directory where the server is started.
 
 ## Data Sources
 
@@ -214,6 +230,27 @@ Reset time comes from:
 
 If you have not used Codex locally yet, or none of the recent session files contain a valid `token_count` event, the Codex section will render without usage bars instead of crashing the page.
 The usual fix is simply to use Codex locally once so it writes fresh session data, then refresh the dashboard.
+
+### Claude Code ACP
+
+KindleVibe includes a second tab for Claude Code through the Agent Client Protocol (ACP).
+It acts as a local ACP client and talks to the Claude adapter over stdio JSON-RPC.
+
+The Claude tab supports:
+
+- listing recent sessions for the configured working directory
+- loading a selected session's messages
+- sending a prompt to start a new session
+- sending a prompt to reply to the selected session
+- showing pending permission requests with the adapter-provided action buttons
+
+By default, KindleVibe tries:
+
+1. `agents.claude_acp.command` and `agents.claude_acp.args`, if configured
+2. `claude-agent-acp` on `PATH`
+3. `npx -y @agentclientprotocol/claude-agent-acp`
+
+No Claude token is stored in `config.yaml`; authentication remains inside your local Claude Code setup.
 
 ### Linear
 

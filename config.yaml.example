@@ -11,6 +11,11 @@ agents:
     token: ""
   gemini:
     enabled: true
+  claude_acp:
+    enabled: true
+    command: ""
+    args: []
+    cwd: ""
 exchange:
   pairs:
     - base: "BTC"
