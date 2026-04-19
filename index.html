@@ -115,8 +115,7 @@
       function pollClaude() {
         var shell = document.querySelector(".claude-shell");
         var content = shell ? shell.querySelector("[data-claude-running]") : null;
-        var isRunning = content && content.getAttribute("data-claude-running") === "true";
-        if (!shell || !content || (!isRunning && !claudeWasRunning)) {
+        if (!shell || !content) {
           scheduleClaude();
           return;
         }
@@ -149,6 +148,7 @@
                 setupCwdButton();
                 syncClaudeModelFromContent();
                 if (frame && atBottom) frame.scrollTop = frame.scrollHeight;
+                updateBackToBottom();
                 claudeWasRunning = nowRunning;
               }
             } else {
@@ -172,7 +172,7 @@
       function scheduleClaude() {
         clearTimeout(claudeTimer);
         if (currentTab !== "claude") return;
-        claudeTimer = setTimeout(pollClaude, 7000);
+        claudeTimer = setTimeout(pollClaude, 3000);
       }
 
       var buddyTimer = null;
@@ -618,6 +618,33 @@
         load(startPath);
       }
 
+      function updateBackToBottom() {
+        var frame = document.querySelector(".frame.claude-frame");
+        var btn = document.querySelector(".back-to-bottom");
+        if (!frame || !btn) return;
+        var atBottom = frame.scrollHeight - frame.scrollTop - frame.clientHeight < 60;
+        btn.style.display = atBottom ? "none" : "block";
+      }
+
+      function setupBackToBottom() {
+        var frame = document.querySelector(".frame.claude-frame");
+        if (!frame) return;
+        var btn = document.querySelector(".back-to-bottom");
+        if (!btn) {
+          btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "back-to-bottom";
+          btn.setAttribute("aria-label", "Scroll to bottom");
+          btn.textContent = "\u2193";
+          btn.onclick = function () {
+            frame.scrollTop = frame.scrollHeight;
+          };
+          document.body.appendChild(btn);
+        }
+        frame.onscroll = updateBackToBottom;
+        updateBackToBottom();
+      }
+
       window.addEventListener("load", function () {
         if (currentTab === "dashboard") {
           applyLinearCap(document.querySelector(".frame"));
@@ -629,6 +656,7 @@
           setupModelForm();
           setupCwdButton();
           syncClaudeModelFromContent();
+          setupBackToBottom();
           scheduleClaude();
           scheduleBuddy();
         }
@@ -766,7 +794,7 @@
       body.claude-page .history-button {
         background: #fff;
         color: #000;
-        border: 0;
+        border: 1px solid #ccc;
       }
 
       .history-button {
@@ -776,7 +804,7 @@
         z-index: 920;
         appearance: none;
         -webkit-appearance: none;
-        border: 0;
+        border: 1px solid #ccc;
         background: #fff;
         color: #000;
         font: inherit;
@@ -860,7 +888,7 @@
 
       body.claude-page .model-form select {
         background: #fff;
-        border: 1px solid #000;
+        border: 1px solid #ccc;
         color: #666;
       }
 
@@ -910,17 +938,14 @@
         left: 50%;
         width: 90%;
         max-width: 520px;
-        max-height: 80%;
-        margin-left: -45%;
-        margin-top: -30%;
+        max-height: calc(100vh - 32px);
+        transform: translate(-50%, -50%);
         background: #fff;
         border: 2px solid #000;
         font-size: 15px;
         overflow: hidden;
-      }
-
-      .cwd-list {
-        max-height: 50vh;
+        display: flex;
+        flex-direction: column;
       }
 
       .cwd-header {
@@ -963,7 +988,7 @@
 
       .cwd-footer {
         display: flex;
-        justify-content: flex-end;
+        justify-content: space-between;
         gap: 6px;
         padding: 8px 10px;
         border-top: 1px solid #000;
@@ -1410,6 +1435,25 @@
         background: #fff;
         border-color: #000;
         color: #000;
+      }
+
+      .back-to-bottom {
+        display: none;
+        position: fixed;
+        right: 16px;
+        bottom: 86px;
+        z-index: 885;
+        width: 40px;
+        height: 40px;
+        border: 2px solid #000;
+        background: #fff;
+        color: #000;
+        font-size: 20px;
+        line-height: 20px;
+        font-weight: bold;
+        cursor: pointer;
+        padding: 0;
+        border-radius: 0;
       }
 
       .chat-dock {
