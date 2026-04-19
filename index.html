@@ -9,6 +9,9 @@
       var claudeTimer = null;
       var currentTab = "{{ .Tab }}";
       var claudeWasRunning = false;
+      var historyPanelOpen = false;
+      var claudeRefreshPaused = false;
+      var claudeRefreshResumeTimer = null;
 
       function applyLinearCap(root) {
         var providers = root.querySelectorAll('.provider');
@@ -113,6 +116,10 @@
       }
 
       function pollClaude() {
+        if (claudeRefreshPaused) {
+          scheduleClaude();
+          return;
+        }
         var shell = document.querySelector(".claude-shell");
         var content = shell ? shell.querySelector("[data-claude-running]") : null;
         if (!shell || !content) {
@@ -129,6 +136,10 @@
         xhr.onreadystatechange = function () {
           if (xhr.readyState === 4) {
             if (xhr.status === 200) {
+              if (historyPanelOpen) {
+                scheduleClaude();
+                return;
+              }
               var tmp = document.createElement("div");
               tmp.innerHTML = xhr.responseText;
               var newRunning = tmp.querySelector("[data-claude-running]");
@@ -146,6 +157,7 @@
                 setupHistoryLinks();
                 setupModelForm();
                 setupCwdButton();
+                setupClaudeInputPause();
                 syncClaudeModelFromContent();
                 if (frame && atBottom) frame.scrollTop = frame.scrollHeight;
                 updateBackToBottom();
@@ -171,14 +183,14 @@
 
       function scheduleClaude() {
         clearTimeout(claudeTimer);
-        if (currentTab !== "claude") return;
+        if (currentTab !== "claude" || claudeRefreshPaused) return;
         claudeTimer = setTimeout(pollClaude, 3000);
       }
 
       var buddyTimer = null;
 
       function pollBuddy() {
-        if (currentTab !== "claude") return;
+        if (currentTab !== "claude" || claudeRefreshPaused) return;
         var sessionId = selectedClaudeSession();
         var xhr = new XMLHttpRequest();
         xhr.open("GET", "/claude/buddy?session_id=" + encodeURIComponent(sessionId), true);
@@ -198,8 +210,55 @@
 
       function scheduleBuddy() {
         clearTimeout(buddyTimer);
-        if (currentTab !== "claude") return;
+        if (currentTab !== "claude" || claudeRefreshPaused) return;
         buddyTimer = setTimeout(pollBuddy, 2000);
+      }
+
+      function isClaudeInputActive() {
+        var active = document.activeElement;
+        if (!active || !active.closest) return false;
+        return !!active.closest(".chat-dock");
+      }
+
+      function setClaudeRefreshPaused(paused) {
+        claudeRefreshPaused = !!paused;
+        clearTimeout(claudeTimer);
+        clearTimeout(buddyTimer);
+        if (!claudeRefreshPaused) {
+          scheduleClaude();
+          scheduleBuddy();
+        }
+      }
+
+      function setupClaudeInputPause() {
+        var dock = document.querySelector(".chat-dock");
+        if (!dock || dock.dataset.pauseBound === "1") return;
+        dock.dataset.pauseBound = "1";
+
+        dock.addEventListener("pointerdown", function () {
+          if (claudeRefreshResumeTimer) {
+            clearTimeout(claudeRefreshResumeTimer);
+            claudeRefreshResumeTimer = null;
+          }
+          setClaudeRefreshPaused(true);
+        });
+
+        dock.addEventListener("focusin", function () {
+          if (claudeRefreshResumeTimer) {
+            clearTimeout(claudeRefreshResumeTimer);
+            claudeRefreshResumeTimer = null;
+          }
+          setClaudeRefreshPaused(true);
+        });
+
+        dock.addEventListener("focusout", function () {
+          if (claudeRefreshResumeTimer) clearTimeout(claudeRefreshResumeTimer);
+          claudeRefreshResumeTimer = setTimeout(function () {
+            if (!isClaudeInputActive()) {
+              setClaudeRefreshPaused(false);
+            }
+          }, 1200);
+        });
       }
 
       function updateBuddyRow(b) {
@@ -446,6 +505,7 @@
         var panel = document.querySelector(".history-panel");
         var button = document.querySelector(".history-button");
         if (!panel) return;
+        historyPanelOpen = true;
         panel.style.display = "block";
         if (button) button.setAttribute("aria-expanded", "true");
         showHistoryMask();
@@ -454,6 +514,7 @@
       function closeHistoryPanel() {
         var panel = document.querySelector(".history-panel");
         var button = document.querySelector(".history-button");
+        historyPanelOpen = false;
         if (panel) panel.style.display = "none";
         if (button) button.setAttribute("aria-expanded", "false");
         hideHistoryMask();
@@ -511,6 +572,7 @@
                 setupHistoryLinks();
                 setupModelForm();
                 setupCwdButton();
+                setupClaudeInputPause();
                 syncClaudeModelFromContent();
                 if (window.history && window.history.pushState) {
                   window.history.pushState(null, "", href);
@@ -655,6 +717,7 @@
           setupHistoryLinks();
           setupModelForm();
           setupCwdButton();
+          setupClaudeInputPause();
           syncClaudeModelFromContent();
           setupBackToBottom();
           scheduleClaude();
@@ -929,7 +992,15 @@
       }
 
       .ui-mask {
-        z-index: 850;
+        z-index: 9300;
+      }
+
+      .ui-mask.history-mask {
+        z-index: 9300;
+      }
+
+      .history-panel {
+        z-index: 9301;
       }
 
       .cwd-dialog {
@@ -1012,7 +1083,6 @@
         position: fixed;
         top: 42px;
         right: 12px;
-        z-index: 910;
         width: 330px;
         max-width: calc(100vw - 24px);
         max-height: calc(100vh - 166px);
