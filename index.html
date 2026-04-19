@@ -456,10 +456,16 @@
       }
 
       .frame.claude-frame {
-        padding-bottom: 132px;
-        height: calc(100vh - 98px);
+        padding-bottom: 80px;
+        height: calc(100vh - 102px);
         overflow: auto;
         box-sizing: border-box;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+
+      .frame.claude-frame::-webkit-scrollbar {
+        display: none;
       }
 
       .top-nav {
@@ -482,27 +488,37 @@
       .tab-bar {
         position: absolute;
         left: 50%;
-        top: 6px;
+        top: 8px;
         transform: translateX(-50%);
         z-index: 901;
-        background: #fff;
-        border: 2px solid #ccc;
-        display: table;
-        width: 172px;
-        max-width: calc(100vw - 204px);
-        table-layout: fixed;
+        background: transparent;
+        border: 0;
+        display: flex;
+        align-items: center;
+        gap: 0;
       }
 
       .tab-link {
-        display: table-cell;
-        color: #000;
+        display: block;
+        color: #888;
         text-decoration: none;
         text-align: center;
-        font-size: 14px;
-        line-height: 18px;
+        font-size: 13px;
+        line-height: 16px;
         font-weight: bold;
-        padding: 4px 4px;
-        border-right: 2px solid #ccc;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border: 0;
+        background: transparent;
+        white-space: nowrap;
+      }
+
+      .tab-bar .tab-divider {
+        width: 1px;
+        height: 14px;
+        background: #ccc;
+        flex-shrink: 0;
       }
 
       .tab-link:last-child {
@@ -510,30 +526,34 @@
       }
 
       .tab-link.active {
-        background: #000;
-        color: #fff;
+        background: transparent;
+        color: #000;
+        text-decoration: underline;
+        text-underline-offset: 3px;
       }
 
-      body.claude-page .tab-bar,
-      body.claude-page .history-button {
-        background: #fff;
-        border-color: #000;
+      body.claude-page .tab-bar {
+        background: transparent;
+        border: 0;
       }
 
       body.claude-page .tab-link {
-        color: #000;
-        border-right-color: #000;
+        color: #888;
+        background: transparent;
+        border: 0;
       }
 
       body.claude-page .tab-link.active {
-        background: #fff;
+        background: transparent;
         color: #000;
         text-decoration: underline;
+        text-underline-offset: 3px;
       }
 
       body.claude-page .history-button {
         background: #fff;
         color: #000;
+        border: 0;
       }
 
       .history-button {
@@ -543,7 +563,7 @@
         z-index: 920;
         appearance: none;
         -webkit-appearance: none;
-        border: 2px solid #ccc;
+        border: 0;
         background: #fff;
         color: #000;
         font: inherit;
@@ -557,33 +577,50 @@
 
       .model-form {
         position: absolute;
-        top: 4px;
-        left: 12px;
-        z-index: 920;
+        left: 0;
+        bottom: 100%;
+        z-index: 890;
         margin: 0;
+        padding-bottom: 2px;
       }
 
       .model-form select {
         appearance: none;
         -webkit-appearance: none;
-        border: 2px solid #ccc;
+        border: 1px solid #ccc;
         background: #fff;
-        color: #000;
+        color: #666;
         font: inherit;
         font-size: 15px;
-        line-height: 22px;
+        line-height: 20px;
         font-weight: bold;
-        padding: 6px 24px 6px 8px;
+        padding: 2px 20px 2px 6px;
         border-radius: 0;
-        width: 142px;
-        max-width: 40vw;
-        min-height: 38px;
+        max-width: 50vw;
+        min-height: 26px;
+        cursor: pointer;
+      }
+
+      .model-form-wrap {
+        position: relative;
+        display: inline-block;
+      }
+
+      .model-form-wrap::after {
+        content: "\25BC";
+        position: absolute;
+        right: 4px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 8px;
+        pointer-events: none;
+        color: #999;
       }
 
       body.claude-page .model-form select {
         background: #fff;
-        border-color: #000;
-        color: #000;
+        border: 1px solid #000;
+        color: #666;
       }
 
       .history-panel {
@@ -637,7 +674,7 @@
       }
 
       .claude-status {
-        border: 3px solid #ccc;
+        border: 0;
         padding: 8px;
         font-size: 15px;
         line-height: 20px;
@@ -646,8 +683,21 @@
 
       body.claude-page .claude-status {
         background: #fff;
-        border-color: #000;
+        border: 0;
         color: #000;
+      }
+
+      .claude-conversation:not(:has(.message)) {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: calc(100vh - 200px);
+      }
+
+      .claude-conversation:not(:has(.message)) .claude-status {
+        color: #aaa;
+        font-size: 14px;
+        text-align: center;
       }
 
       .session-link {
@@ -696,7 +746,7 @@
       }
 
       .message {
-        margin-bottom: 26px;
+        margin-bottom: 12px;
         border: 2px solid #ccc;
         padding: 14px 18px;
         box-sizing: border-box;
@@ -723,9 +773,10 @@
       body.claude-page .message-user {
         width: 86%;
         background: transparent;
-        border: 2px solid #000;
+        border: 0;
         margin-left: auto;
         margin-right: 0;
+        text-align: right;
       }
 
       body.claude-page .message.loading-message {
@@ -919,27 +970,36 @@
         bottom: 0;
         z-index: 880;
         display: flex;
+        align-items: stretch;
         background: #fff;
-        border-top: 3px solid #ccc;
+        border-top: 0;
         padding: 8px;
         box-sizing: border-box;
       }
 
+      .chat-input-wrap {
+        flex: 1;
+        min-width: 0;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+      }
+
       body.claude-page .chat-box {
         background: #fff;
-        border-top-color: #000;
+        border-top: 0;
       }
 
       .chat-box textarea {
         flex: 1;
-        min-width: 0;
-        height: 72px;
+        width: 100%;
+        height: 44px;
         resize: none;
         border: 3px solid #ccc;
         color: #000;
         background: #fff;
         font: inherit;
-        font-size: 17px;
+        font-size: 15px;
         line-height: 22px;
         padding: 8px;
         box-sizing: border-box;
@@ -954,7 +1014,9 @@
 
       .chat-send {
         width: 96px;
+        height: auto;
         margin-left: 8px;
+        align-self: stretch;
       }
 
       .chat-send:disabled {
@@ -1374,23 +1436,14 @@
       {{ end }}
     </div>
     <div class="top-nav">
-      {{ if eq .Tab "claude" }}
-      <form class="model-form" method="POST" action="/claude/model">
-        <input type="hidden" name="session_id" value="{{ .Claude.SelectedID }}" />
-        <select name="model" aria-label="Claude model">
-          {{ range .Claude.ModelOptions }}
-          <option value="{{ . }}"{{ if eq $.Claude.CurrentModel . }} selected{{ end }}>{{ . }}</option>
-          {{ end }}
-        </select>
-      </form>
-      {{ end }}
       <div class="tab-bar">
         <a class="tab-link{{ if ne .Tab "claude" }} active{{ end }}" href="/">Dashboard</a>
+        <span class="tab-divider"></span>
         <a class="tab-link{{ if eq .Tab "claude" }} active{{ end }}" href="/claude">Claude</a>
       </div>
       {{ if eq .Tab "claude" }}
       <button class="history-button" type="button" aria-expanded="false">
-        History
+        History &#9660;
       </button>
       {{ end }}
     </div>
@@ -1468,7 +1521,18 @@
       {{ if .Enabled }}
       <form class="chat-box" method="POST" action="/claude/send">
         <input type="hidden" name="session_id" value="{{ .SelectedID }}" />
-        <textarea name="prompt" placeholder="Prompt Claude Code"></textarea>
+        <div class="chat-input-wrap">
+          <div class="model-form">
+            <div class="model-form-wrap">
+              <select name="model" aria-label="Claude model">
+                {{ range .ModelOptions }}
+                <option value="{{ . }}"{{ if eq $.CurrentModel . }} selected{{ end }}>{{ . }}</option>
+                {{ end }}
+              </select>
+            </div>
+          </div>
+          <textarea name="prompt" placeholder="Prompt Claude Code"></textarea>
+        </div>
         <button class="chat-send" type="submit">SEND</button>
       </form>
       {{ end }}

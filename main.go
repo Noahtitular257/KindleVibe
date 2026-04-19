@@ -1398,7 +1398,7 @@ func compactResetText(value string) string {
 	}
 
 	for _, layout := range layouts {
-		if parsed, err := time.Parse(layout, value); err == nil {
+		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
 			local := parsed.Local()
 			if local.Format("2006-01-02") == time.Now().Format("2006-01-02") {
 				return local.Format("15:04")
@@ -3011,7 +3011,7 @@ func renderBasicMarkdown(text string) template.HTML {
 		parts := mdCodeBlockPattern.FindStringSubmatch(match)
 		idx := len(blocks)
 		blocks = append(blocks, codeBlock{lang: parts[1], code: parts[2]})
-		return fmt.Sprintf("\x00CODEBLOCK%d\x00", idx)
+		return fmt.Sprintf("\uFFFCCODEBLOCK%d\uFFFC", idx)
 	})
 
 	// Extract inline code to protect from other transformations
@@ -3020,7 +3020,7 @@ func renderBasicMarkdown(text string) template.HTML {
 		parts := mdInlineCodePattern.FindStringSubmatch(match)
 		idx := len(inlines)
 		inlines = append(inlines, parts[1])
-		return fmt.Sprintf("\x00INLINE%d\x00", idx)
+		return fmt.Sprintf("\uFFFCINLINE%d\uFFFC", idx)
 	})
 
 	// Escape HTML in the remaining text
@@ -3101,13 +3101,13 @@ func renderBasicMarkdown(text string) template.HTML {
 	// Restore inline code
 	for i, code := range inlines {
 		escaped := template.HTMLEscapeString(code)
-		text = strings.Replace(text, fmt.Sprintf("\x00INLINE%d\x00", i), "<code>"+escaped+"</code>", 1)
+		text = strings.Replace(text, fmt.Sprintf("\uFFFCINLINE%d\uFFFC", i), "<code>"+escaped+"</code>", 1)
 	}
 
 	// Restore code blocks
 	for i, block := range blocks {
 		escaped := template.HTMLEscapeString(strings.TrimRight(block.code, "\n"))
-		text = strings.Replace(text, fmt.Sprintf("\x00CODEBLOCK%d\x00", i), "<pre><code>"+escaped+"</code></pre>", 1)
+		text = strings.Replace(text, fmt.Sprintf("\uFFFCCODEBLOCK%d\uFFFC", i), "<pre><code>"+escaped+"</code></pre>", 1)
 	}
 
 	return template.HTML(text)
