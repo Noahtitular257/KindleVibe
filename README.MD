@@ -10,7 +10,7 @@ KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Line
 - **Portrait dashboard:** Single-screen layout tuned for a 1080 x 1440 Kindle display.
 - **Auto-refresh:** Refreshes every 15 seconds with a background XHR poll.
 - **Current providers:** GitHub Copilot, Codex, Linear, and Gemini.
-- **Exchange snapshot:** Configurable via `config.yaml` to display up to 2 columns of exchange rates at the bottom. Default includes BTC/USD, USD/CNY, AUD/CNY, JPY/CNY, CAD/CNY, and HKD/CNY.
+- **Exchange snapshot:** Configurable via `config.yaml` to display up to 2 rows of 3 exchange rates at the bottom. Default includes BTC/USD, USD/CNY, AUD/CNY, JPY/CNY, CAD/CNY, and HKD/CNY.
 - **Local-only:** Reads usage from local auth state and local session files.
 - **Simple startup:** `make` rebuilds and starts the server.
 

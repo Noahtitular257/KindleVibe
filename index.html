@@ -468,27 +468,39 @@
         box-sizing: border-box;
       }
 
-      .rate-table {
+      .rates-grid {
         width: 100%;
+        table-layout: fixed;
+        border: 3px solid #ccc;
         border-collapse: collapse;
       }
 
-      .rate-table td {
-        font-size: 18px;
-        line-height: 30px;
-        padding: 0;
+      .rate-cell {
+        padding: 3px 8px;
+        vertical-align: middle;
+      }
+
+      .rate-line {
+        display: flex;
+        align-items: baseline;
+        white-space: nowrap;
       }
 
       .rate-pair {
         color: #6d6965;
         text-align: left;
         font-weight: bold;
+        font-size: 10px;
+        line-height: 14px;
       }
 
       .rate-value {
         color: #000;
         text-align: right;
         font-weight: bold;
+        font-size: 13px;
+        line-height: 14px;
+        margin-left: auto;
       }
 
       .rates-empty,
@@ -675,29 +687,26 @@
         <div class="provider-detail">{{ .Detail }}</div>
         {{ end }}
       </div>
-      {{ end }} {{ if or .LeftRates .RightRates }}
-      <div class="provider-row" style="margin-bottom: 0">
-        <div class="provider" style="padding: 6px 10px">
-          <table class="rate-table">
-            {{ range .LeftRates }}
-            <tr>
-              <td class="rate-pair">{{ .Pair }}</td>
-              <td class="rate-value">{{ .Value }}</td>
-            </tr>
-            {{ end }}
-          </table>
-        </div>
-        <div class="provider" style="padding: 6px 10px">
-          <table class="rate-table">
-            {{ range .RightRates }}
-            <tr>
-              <td class="rate-pair">{{ .Pair }}</td>
-              <td class="rate-value">{{ .Value }}</td>
-            </tr>
-            {{ end }}
-          </table>
-        </div>
-      </div>
+      {{ end }} {{ if .RateRows }}
+      <table class="rates-grid">
+        <colgroup>
+          <col />
+          <col />
+          <col />
+        </colgroup>
+        {{ range .RateRows }}
+        <tr>
+          {{ range . }}
+          <td class="rate-cell">
+            <div class="rate-line">
+              <span class="rate-pair">{{ .Pair }}</span>
+              <span class="rate-value">{{ .Value }}</span>
+            </div>
+          </td>
+          {{ end }}
+        </tr>
+        {{ end }}
+      </table>
       {{ else }}
       <div class="rates-empty">RATES UNAVAILABLE</div>
       {{ end }}

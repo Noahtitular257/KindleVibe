@@ -119,11 +119,10 @@ type ExchangeRateRow struct {
 }
 
 type DashboardData struct {
-	Providers  []ProviderPanel
-	LeftRates  []ExchangeRateRow
-	RightRates []ExchangeRateRow
-	Time       string
-	Runtime    string
+	Providers []ProviderPanel
+	RateRows  [][]ExchangeRateRow
+	Time      string
+	Runtime   string
 }
 
 type dashboardCache struct {
@@ -1865,12 +1864,7 @@ func buildDashboardData(cfg *Config) DashboardData {
 		log.Printf("Rates Error: %v", err)
 	}
 
-	half := (len(rates) + 1) / 2
-	var leftRates, rightRates []ExchangeRateRow
-	if len(rates) > 0 {
-		leftRates = rates[:half]
-		rightRates = rates[half:]
-	}
+	rateRows := exchangeRateRows(rates, 3, 2)
 
 	providers := make([]ProviderPanel, 0, len(agents))
 	for _, agent := range agents {
@@ -1878,12 +1872,32 @@ func buildDashboardData(cfg *Config) DashboardData {
 	}
 
 	return DashboardData{
-		Providers:  providers,
-		LeftRates:  leftRates,
-		RightRates: rightRates,
-		Time:       time.Now().Format("15:04:05"),
-		Runtime:    "RUNTIME_01",
+		Providers: providers,
+		RateRows:  rateRows,
+		Time:      time.Now().Format("15:04:05"),
+		Runtime:   "RUNTIME_01",
 	}
+}
+
+func exchangeRateRows(rates []ExchangeRateRow, columns int, maxRows int) [][]ExchangeRateRow {
+	if columns <= 0 || maxRows <= 0 || len(rates) == 0 {
+		return nil
+	}
+
+	limit := columns * maxRows
+	if len(rates) > limit {
+		rates = rates[:limit]
+	}
+
+	rows := make([][]ExchangeRateRow, 0, (len(rates)+columns-1)/columns)
+	for start := 0; start < len(rates); start += columns {
+		end := start + columns
+		if end > len(rates) {
+			end = len(rates)
+		}
+		rows = append(rows, rates[start:end])
+	}
+	return rows
 }
 
 func newDashboardCache() *dashboardCache {
