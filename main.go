@@ -2084,6 +2084,8 @@ func main() {
 		http.HandleFunc("/claude/send", claudeSendHandler(cfg, claude))
 		http.HandleFunc("/claude/model", claudeModelHandler(claude))
 		http.HandleFunc("/claude/permission", claudePermissionHandler(claude))
+		http.HandleFunc("/claude/dirs", claudeDirsHandler(cfg, claude))
+		http.HandleFunc("/claude/cwd", claudeCwdHandler(claude))
 		addr := fmt.Sprintf(":%d", cfg.Server.Port)
 		fmt.Printf("Starting KindleVibe server on http://localhost%s\n", addr)
 		if err := http.ListenAndServe(addr, nil); err != nil {

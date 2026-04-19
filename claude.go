@@ -245,6 +245,20 @@ type claudeManager struct {
 	sessionsErr    error
 	sessionsAt     time.Time
 	currentModel   string
+	cwdOverride    string
+}
+
+func (m *claudeManager) setCwdOverride(dir string) {
+	m.mu.Lock()
+	m.cwdOverride = dir
+	m.active = make(map[string]*claudeTurnState)
+	m.history = make(map[string]ClaudeConversationView)
+	m.historyFetched = make(map[string]time.Time)
+	m.sessions = nil
+	m.sessionsErr = nil
+	m.sessionsAt = time.Time{}
+	m.mu.Unlock()
+	setClaudeCwdOverride(dir)
 }
 
 type claudeTurnState struct {
@@ -324,7 +338,27 @@ func claudeACPEnabled(cfg *Config) bool {
 	return cfg != nil && cfg.Agents.ClaudeACP.Enabled
 }
 
+var (
+	claudeCwdOverrideMu sync.RWMutex
+	claudeCwdOverride   string
+)
+
+func setClaudeCwdOverride(dir string) {
+	claudeCwdOverrideMu.Lock()
+	claudeCwdOverride = dir
+	claudeCwdOverrideMu.Unlock()
+}
+
+func getClaudeCwdOverride() string {
+	claudeCwdOverrideMu.RLock()
+	defer claudeCwdOverrideMu.RUnlock()
+	return claudeCwdOverride
+}
+
 func claudeACPCwd(cfg *Config) (string, error) {
+	if override := getClaudeCwdOverride(); override != "" {
+		return override, nil
+	}
 	if cfg != nil {
 		if configured := strings.TrimSpace(cfg.Agents.ClaudeACP.Cwd); configured != "" {
 			return filepath.Abs(expandPath(configured))
@@ -1716,6 +1750,83 @@ func claudeModelHandler(manager *claudeManager) http.HandlerFunc {
 		sessionID := strings.TrimSpace(r.FormValue("session_id"))
 		if sessionID != "" {
 			http.Redirect(w, r, "/claude?session_id="+url.QueryEscape(sessionID), http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/claude", http.StatusSeeOther)
+	}
+}
+
+func claudeDirsHandler(cfg *Config, manager *claudeManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimSpace(r.URL.Query().Get("path"))
+		if path == "" {
+			p, err := claudeACPCwd(cfg)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			path = p
+		}
+		abs, err := filepath.Abs(expandPath(path))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		entries, err := os.ReadDir(abs)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		dirs := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if strings.HasPrefix(name, ".") {
+				continue
+			}
+			dirs = append(dirs, name)
+		}
+		sort.Strings(dirs)
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			parent = ""
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"path":   abs,
+			"parent": parent,
+			"dirs":   dirs,
+		})
+	}
+}
+
+func claudeCwdHandler(manager *claudeManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		raw := strings.TrimSpace(r.FormValue("path"))
+		if raw == "" {
+			http.Error(w, "missing path", http.StatusBadRequest)
+			return
+		}
+		abs, err := filepath.Abs(expandPath(raw))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		info, err := os.Stat(abs)
+		if err != nil || !info.IsDir() {
+			http.Error(w, "not a directory", http.StatusBadRequest)
+			return
+		}
+		manager.setCwdOverride(abs)
+		if wantsJSON(r) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{"cwd": abs})
 			return
 		}
 		http.Redirect(w, r, "/claude", http.StatusSeeOther)

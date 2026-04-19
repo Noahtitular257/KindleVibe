@@ -146,6 +146,7 @@
                 setupHistoryMenu();
                 setupHistoryLinks();
                 setupModelForm();
+                setupCwdButton();
                 syncClaudeModelFromContent();
                 if (frame && atBottom) frame.scrollTop = frame.scrollHeight;
                 claudeWasRunning = nowRunning;
@@ -425,21 +426,45 @@
         };
       }
 
+      function showHistoryMask() {
+        var existing = document.querySelector(".ui-mask.history-mask");
+        if (existing) return;
+        var mask = document.createElement("div");
+        mask.className = "ui-mask history-mask";
+        mask.onclick = function () {
+          closeHistoryPanel();
+        };
+        document.body.appendChild(mask);
+      }
+
+      function hideHistoryMask() {
+        var mask = document.querySelector(".ui-mask.history-mask");
+        if (mask && mask.parentNode) mask.parentNode.removeChild(mask);
+      }
+
       function openHistoryPanel() {
         var panel = document.querySelector(".history-panel");
         var button = document.querySelector(".history-button");
         if (!panel) return;
         panel.style.display = "block";
         if (button) button.setAttribute("aria-expanded", "true");
+        showHistoryMask();
+      }
+
+      function closeHistoryPanel() {
+        var panel = document.querySelector(".history-panel");
+        var button = document.querySelector(".history-button");
+        if (panel) panel.style.display = "none";
+        if (button) button.setAttribute("aria-expanded", "false");
+        hideHistoryMask();
       }
 
       function toggleHistoryPanel() {
         var panel = document.querySelector(".history-panel");
-        var button = document.querySelector(".history-button");
         if (!panel) return;
         var open = panel.style.display === "block";
-        panel.style.display = open ? "none" : "block";
-        if (button) button.setAttribute("aria-expanded", open ? "false" : "true");
+        if (open) closeHistoryPanel();
+        else openHistoryPanel();
       }
 
       function setupHistoryLinks() {
@@ -456,10 +481,7 @@
               sessionId = decodeURIComponent(href.substring(index + marker.length));
             }
 
-            var panel = document.querySelector(".history-panel");
-            var button = document.querySelector(".history-button");
-            if (panel) panel.style.display = "none";
-            if (button) button.setAttribute("aria-expanded", "false");
+            closeHistoryPanel();
 
             var shell = document.querySelector(".claude-shell");
             if (!shell) {
@@ -488,6 +510,7 @@
                 setupHistoryMenu();
                 setupHistoryLinks();
                 setupModelForm();
+                setupCwdButton();
                 syncClaudeModelFromContent();
                 if (window.history && window.history.pushState) {
                   window.history.pushState(null, "", href);
@@ -502,6 +525,99 @@
         }
       }
 
+      function setupCwdButton() {
+        var btn = document.querySelector(".cwd-button");
+        if (!btn || btn.dataset.bound === "1") return;
+        btn.dataset.bound = "1";
+        btn.onclick = function () {
+          openCwdOverlay(btn.getAttribute("data-cwd") || "");
+        };
+      }
+
+      function openCwdOverlay(startPath) {
+        var existing = document.querySelector(".cwd-overlay");
+        if (existing) existing.parentNode.removeChild(existing);
+        var overlay = document.createElement("div");
+        overlay.className = "cwd-overlay";
+        overlay.innerHTML =
+          '<div class="cwd-dialog">' +
+          '  <div class="cwd-header">' +
+          '    <div class="cwd-current"></div>' +
+          '    <button type="button" class="cwd-parent-btn">\u21EA Go to parent folder</button>' +
+          '  </div>' +
+          '  <ul class="cwd-list"></ul>' +
+          '  <div class="cwd-footer">' +
+          '    <button type="button" class="cwd-cancel">Cancel</button>' +
+          '    <button type="button" class="cwd-confirm primary">Confirm</button>' +
+          '  </div>' +
+          '</div>';
+        document.body.appendChild(overlay);
+
+        var state = { path: startPath, parent: "", selected: startPath };
+        var currentEl = overlay.querySelector(".cwd-current");
+        var listEl = overlay.querySelector(".cwd-list");
+        var parentBtn = overlay.querySelector(".cwd-parent-btn");
+
+        function load(path) {
+          var xhr = new XMLHttpRequest();
+          xhr.open("GET", "/claude/dirs?path=" + encodeURIComponent(path || ""), true);
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            if (xhr.status !== 200) {
+              currentEl.textContent = "Error: " + xhr.status;
+              return;
+            }
+            var data = JSON.parse(xhr.responseText);
+            state.path = data.path;
+            state.parent = data.parent || "";
+            state.selected = data.path;
+            currentEl.textContent = data.path;
+            parentBtn.disabled = !state.parent;
+            listEl.innerHTML = "";
+            for (var i = 0; i < data.dirs.length; i++) {
+              var li = document.createElement("li");
+              li.textContent = data.dirs[i];
+              li.setAttribute("data-name", data.dirs[i]);
+              li.onclick = (function (name) {
+                return function () {
+                  var joined = data.path.replace(/\/$/, "") + "/" + name;
+                  load(joined);
+                };
+              })(data.dirs[i]);
+              listEl.appendChild(li);
+            }
+          };
+          xhr.send();
+        }
+
+        parentBtn.onclick = function () {
+          if (state.parent) load(state.parent);
+        };
+        overlay.querySelector(".cwd-cancel").onclick = function () {
+          overlay.parentNode.removeChild(overlay);
+        };
+        overlay.querySelector(".cwd-confirm").onclick = function () {
+          var form = new FormData();
+          form.append("path", state.selected);
+          var xhr = new XMLHttpRequest();
+          xhr.open("POST", "/claude/cwd", true);
+          xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+          xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            window.location.href = "/claude";
+          };
+          xhr.send(
+            "path=" + encodeURIComponent(state.selected)
+          );
+        };
+        overlay.addEventListener("click", function (e) {
+          if (e.target === overlay) overlay.parentNode.removeChild(overlay);
+        });
+
+        load(startPath);
+      }
+
       window.addEventListener("load", function () {
         if (currentTab === "dashboard") {
           applyLinearCap(document.querySelector(".frame"));
@@ -511,6 +627,7 @@
           setupHistoryMenu();
           setupHistoryLinks();
           setupModelForm();
+          setupCwdButton();
           syncClaudeModelFromContent();
           scheduleClaude();
           scheduleBuddy();
@@ -684,6 +801,28 @@
         position: static;
         margin-left: auto;
         padding-bottom: 0;
+        text-align: right;
+      }
+
+      .chat-toolbar {
+        display: block;
+        text-align: left;
+        padding: 6px 8px 0;
+        white-space: nowrap;
+      }
+
+      .chat-toolbar .model-form {
+        position: static;
+        display: inline-block;
+        vertical-align: middle;
+        padding-bottom: 0;
+        margin-right: 8px;
+      }
+
+      .chat-toolbar .cwd-button {
+        display: inline-block;
+        vertical-align: middle;
+        margin-top: 0;
       }
 
       .model-form select {
@@ -723,6 +862,124 @@
         background: #fff;
         border: 1px solid #000;
         color: #666;
+      }
+
+      .cwd-button {
+        display: inline-block;
+        margin-top: 12px;
+        max-width: 50vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        background: #fff;
+        border: 1px solid #ccc;
+        color: #666;
+        font: inherit;
+        font-size: 15px;
+        line-height: 20px;
+        font-weight: bold;
+        padding: 2px 6px;
+        min-height: 26px;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .cwd-overlay,
+      .ui-mask {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.35);
+      }
+
+      .cwd-overlay {
+        z-index: 9000;
+      }
+
+      .ui-mask {
+        z-index: 850;
+      }
+
+      .cwd-dialog {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 90%;
+        max-width: 520px;
+        max-height: 80%;
+        margin-left: -45%;
+        margin-top: -30%;
+        background: #fff;
+        border: 2px solid #000;
+        font-size: 15px;
+        overflow: hidden;
+      }
+
+      .cwd-list {
+        max-height: 50vh;
+      }
+
+      .cwd-header {
+        padding: 8px 10px;
+        border-bottom: 1px solid #000;
+      }
+
+      .cwd-current {
+        font-weight: bold;
+        word-break: break-all;
+        margin-bottom: 6px;
+      }
+
+      .cwd-parent-btn {
+        background: #fff;
+        border: 1px solid #000;
+        padding: 4px 8px;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .cwd-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        overflow: auto;
+        flex: 1;
+      }
+
+      .cwd-list li {
+        padding: 6px 10px;
+        border-bottom: 1px solid #ddd;
+        cursor: pointer;
+      }
+
+      .cwd-list li.selected {
+        background: #000;
+        color: #fff;
+      }
+
+      .cwd-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        padding: 8px 10px;
+        border-top: 1px solid #000;
+      }
+
+      .cwd-footer button {
+        background: #fff;
+        border: 1px solid #000;
+        padding: 4px 12px;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .cwd-footer button.primary {
+        background: #000;
+        color: #fff;
       }
 
       .history-panel {
@@ -1155,12 +1412,17 @@
         color: #000;
       }
 
-      .chat-box {
+      .chat-dock {
         position: fixed;
         left: 0;
         right: 0;
         bottom: 0;
         z-index: 880;
+        background: #fff;
+        box-sizing: border-box;
+      }
+
+      .chat-box {
         display: flex;
         align-items: stretch;
         background: #fff;
@@ -1665,17 +1927,6 @@
             {{ if .Buddy.PromptTool }}<span class="buddy-prompt">&#9888; {{ .Buddy.PromptTool }}{{ if .Buddy.PromptHint }} — {{ .Buddy.PromptHint }}{{ end }}</span>{{ end }}
             {{ if .Buddy.Entries }}<span class="buddy-entries">{{ range .Buddy.Entries }}<span class="buddy-entry">{{ . }}</span>{{ end }}</span>{{ end }}
           </div>
-          {{ if .Enabled }}
-          <div class="model-form">
-            <div class="model-form-wrap">
-              <select name="model" aria-label="Claude model">
-                {{ range .ModelOptions }}
-                <option value="{{ . }}"{{ if eq $.CurrentModel . }} selected{{ end }}>{{ . }}</option>
-                {{ end }}
-              </select>
-            </div>
-          </div>
-          {{ end }}
         </div>
         <div class="claude-layout">
           <div class="claude-conversation">
@@ -1737,13 +1988,29 @@
         {{ end }}
       </div>
       {{ if .Enabled }}
-      <form class="chat-box" method="POST" action="/claude/send">
-        <input type="hidden" name="session_id" value="{{ .SelectedID }}" />
-        <div class="chat-input-wrap">
-          <textarea name="prompt" placeholder="Prompt Claude Code"></textarea>
+      <div class="chat-dock">
+        <div class="chat-toolbar">
+          <div class="model-form">
+            <div class="model-form-wrap">
+              <select name="model" aria-label="Claude model">
+                {{ range .ModelOptions }}
+                <option value="{{ . }}"{{ if eq $.CurrentModel . }} selected{{ end }}>{{ . }}</option>
+                {{ end }}
+              </select>
+            </div>
+          </div>
+          <button type="button" class="cwd-button" data-cwd="{{ .Cwd }}" aria-label="Change working directory">
+            <span class="cwd-label">{{ .Cwd }}</span>
+          </button>
         </div>
-        <button class="chat-send" type="submit">SEND</button>
-      </form>
+        <form class="chat-box" method="POST" action="/claude/send">
+          <input type="hidden" name="session_id" value="{{ .SelectedID }}" />
+          <div class="chat-input-wrap">
+            <textarea name="prompt" placeholder="Prompt Claude Code"></textarea>
+          </div>
+          <button class="chat-send" type="submit">SEND</button>
+        </form>
+      </div>
       {{ end }}
 {{end}}
 {{define "frame-content"}}
