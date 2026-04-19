@@ -105,8 +105,6 @@
         if (content) content.setAttribute("data-claude-session", sessionId || "");
         var input = document.querySelector('.chat-box input[name="session_id"]');
         if (input) input.value = sessionId || "";
-        var modelSession = document.querySelector('.model-form input[name="session_id"]');
-        if (modelSession) modelSession.value = sessionId || "";
       }
 
       function countMessages(root) {
@@ -147,6 +145,7 @@
                 setupClaudeForm();
                 setupHistoryMenu();
                 setupHistoryLinks();
+                setupModelForm();
                 syncClaudeModelFromContent();
                 if (frame && atBottom) frame.scrollTop = frame.scrollHeight;
                 claudeWasRunning = nowRunning;
@@ -173,6 +172,102 @@
         clearTimeout(claudeTimer);
         if (currentTab !== "claude") return;
         claudeTimer = setTimeout(pollClaude, 7000);
+      }
+
+      var buddyTimer = null;
+
+      function pollBuddy() {
+        if (currentTab !== "claude") return;
+        var sessionId = selectedClaudeSession();
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/claude/buddy?session_id=" + encodeURIComponent(sessionId), true);
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState !== 4) return;
+          if (xhr.status === 200) {
+            try {
+              var b = JSON.parse(xhr.responseText);
+              updateBuddyRow(b);
+            } catch (e) {}
+          }
+          scheduleBuddy();
+        };
+        xhr.onerror = function () { scheduleBuddy(); };
+        xhr.send();
+      }
+
+      function scheduleBuddy() {
+        clearTimeout(buddyTimer);
+        if (currentTab !== "claude") return;
+        buddyTimer = setTimeout(pollBuddy, 2000);
+      }
+
+      function updateBuddyRow(b) {
+        var row = document.querySelector(".buddy-row");
+        if (!row) return;
+
+        row.setAttribute("data-buddy-state", b.State || "sleep");
+
+        var art = row.querySelector(".buddy-art");
+        if (art && b.Art) art.textContent = b.Art.join("\n") + "\n";
+
+        var stateEl = row.querySelector(".buddy-state");
+        if (stateEl) stateEl.textContent = b.State || "sleep";
+
+        var msgEl = row.querySelector(".buddy-msg");
+        if (msgEl) {
+          var msg = b.Msg || b.StatusMsg || "";
+          msgEl.textContent = msg;
+          msgEl.style.display = msg ? "" : "none";
+        }
+
+        var statsEl = row.querySelector(".buddy-stats");
+        if (statsEl) {
+          var parts = [];
+          if (b.Total) parts.push("sessions:" + b.Total);
+          if (b.Running) parts.push("running:" + b.Running);
+          if (b.Waiting) parts.push("waiting:" + b.Waiting);
+          statsEl.innerHTML = "";
+          for (var i = 0; i < parts.length; i++) {
+            var sp = document.createElement("span");
+            sp.className = "buddy-stat";
+            sp.textContent = parts[i];
+            statsEl.appendChild(sp);
+          }
+        }
+
+        var promptEl = row.querySelector(".buddy-prompt");
+        if (!promptEl) {
+          promptEl = document.createElement("span");
+          promptEl.className = "buddy-prompt";
+          var info = row.querySelector(".buddy-info");
+          if (info) info.appendChild(promptEl);
+        }
+        if (b.PromptTool) {
+          promptEl.textContent = "\u26A0 " + b.PromptTool + (b.PromptHint ? " \u2014 " + b.PromptHint : "");
+          promptEl.style.display = "";
+        } else {
+          promptEl.style.display = "none";
+        }
+
+        var entriesEl = row.querySelector(".buddy-entries");
+        if (!entriesEl) {
+          entriesEl = document.createElement("span");
+          entriesEl.className = "buddy-entries";
+          var info2 = row.querySelector(".buddy-info");
+          if (info2) info2.appendChild(entriesEl);
+        }
+        entriesEl.innerHTML = "";
+        if (b.Entries && b.Entries.length) {
+          for (var j = 0; j < b.Entries.length; j++) {
+            var ent = document.createElement("span");
+            ent.className = "buddy-entry";
+            ent.textContent = b.Entries[j];
+            entriesEl.appendChild(ent);
+          }
+          entriesEl.style.display = "";
+        } else {
+          entriesEl.style.display = "none";
+        }
       }
 
       function escapeHTML(text) {
@@ -295,14 +390,12 @@
       }
 
       function setupModelForm() {
-        var form = document.querySelector(".model-form");
+        var form = document.querySelector(".buddy-row .model-form") || document.querySelector(".model-form");
         if (!form || !window.XMLHttpRequest) return;
         form.onchange = function () {
           var select = form.querySelector('select[name="model"]');
           if (!select) return false;
           var sessionId = selectedClaudeSession();
-          var sessionInput = form.querySelector('input[name="session_id"]');
-          if (sessionInput) sessionInput.value = sessionId || "";
           var body =
             "session_id=" +
             encodeURIComponent(sessionId) +
@@ -394,6 +487,7 @@
                 setupClaudeForm();
                 setupHistoryMenu();
                 setupHistoryLinks();
+                setupModelForm();
                 syncClaudeModelFromContent();
                 if (window.history && window.history.pushState) {
                   window.history.pushState(null, "", href);
@@ -419,6 +513,7 @@
           setupModelForm();
           syncClaudeModelFromContent();
           scheduleClaude();
+          scheduleBuddy();
         }
       });
 
@@ -456,6 +551,7 @@
       }
 
       .frame.claude-frame {
+        padding-top: 106px;
         padding-bottom: 80px;
         height: calc(100vh - 102px);
         overflow: auto;
@@ -584,6 +680,12 @@
         padding-bottom: 2px;
       }
 
+      .buddy-row .model-form {
+        position: static;
+        margin-left: auto;
+        padding-bottom: 0;
+      }
+
       .model-form select {
         appearance: none;
         -webkit-appearance: none;
@@ -651,6 +753,96 @@
       body.claude-page .claude-shell {
         background-color: #fff;
         min-height: calc(100vh - 174px);
+      }
+
+      .buddy-row {
+        position: fixed;
+        top: 42px;
+        left: 0;
+        right: 0;
+        z-index: 899;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: 2px solid #ddd;
+        background: #fff;
+        font-family: monospace;
+        min-height: 52px;
+        box-sizing: border-box;
+      }
+
+      .buddy-art {
+        margin: 0;
+        padding: 0;
+        font-size: 12px;
+        line-height: 13px;
+        letter-spacing: 0;
+        color: #000;
+        white-space: pre;
+        flex-shrink: 0;
+      }
+
+      .buddy-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 12px;
+        line-height: 14px;
+      }
+
+      .buddy-state {
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #000;
+      }
+
+      .buddy-msg {
+        color: #555;
+        font-size: 11px;
+      }
+
+      .buddy-stats {
+        display: flex;
+        gap: 8px;
+        font-size: 10px;
+        color: #666;
+      }
+
+      .buddy-stat {
+        white-space: nowrap;
+      }
+
+      .buddy-prompt {
+        color: #c00;
+        font-size: 11px;
+        font-weight: bold;
+      }
+
+      .buddy-entries {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        margin-top: 2px;
+      }
+
+      .buddy-entry {
+        font-size: 10px;
+        line-height: 12px;
+        color: #666;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 220px;
+      }
+
+      .buddy-row[data-buddy-state="attention"] .buddy-state {
+        color: #c00;
+      }
+
+      .buddy-row[data-buddy-state="celebrate"] .buddy-state {
+        color: #080;
       }
 
       .claude-layout {
@@ -1459,6 +1651,32 @@
         {{ if .Error }}
         <div class="claude-status">{{ .Error }}</div>
         {{ end }}
+        <div class="buddy-row" data-buddy-state="{{ .Buddy.State }}">
+          <pre class="buddy-art">{{ range .Buddy.Art }}{{ . }}
+{{ end }}</pre>
+          <div class="buddy-info">
+            <span class="buddy-state">{{ .Buddy.State }}</span>
+            {{ if .Buddy.Msg }}<span class="buddy-msg">{{ .Buddy.Msg }}</span>{{ end }}
+            <span class="buddy-stats">
+              {{- if .Buddy.Total }}<span class="buddy-stat">sessions:{{ .Buddy.Total }}</span>{{ end -}}
+              {{- if .Buddy.Running }}<span class="buddy-stat">running:{{ .Buddy.Running }}</span>{{ end -}}
+              {{- if .Buddy.Waiting }}<span class="buddy-stat">waiting:{{ .Buddy.Waiting }}</span>{{ end -}}
+            </span>
+            {{ if .Buddy.PromptTool }}<span class="buddy-prompt">&#9888; {{ .Buddy.PromptTool }}{{ if .Buddy.PromptHint }} — {{ .Buddy.PromptHint }}{{ end }}</span>{{ end }}
+            {{ if .Buddy.Entries }}<span class="buddy-entries">{{ range .Buddy.Entries }}<span class="buddy-entry">{{ . }}</span>{{ end }}</span>{{ end }}
+          </div>
+          {{ if .Enabled }}
+          <div class="model-form">
+            <div class="model-form-wrap">
+              <select name="model" aria-label="Claude model">
+                {{ range .ModelOptions }}
+                <option value="{{ . }}"{{ if eq $.CurrentModel . }} selected{{ end }}>{{ . }}</option>
+                {{ end }}
+              </select>
+            </div>
+          </div>
+          {{ end }}
+        </div>
         <div class="claude-layout">
           <div class="claude-conversation">
             {{ if .Conversation.Error }}
@@ -1522,15 +1740,6 @@
       <form class="chat-box" method="POST" action="/claude/send">
         <input type="hidden" name="session_id" value="{{ .SelectedID }}" />
         <div class="chat-input-wrap">
-          <div class="model-form">
-            <div class="model-form-wrap">
-              <select name="model" aria-label="Claude model">
-                {{ range .ModelOptions }}
-                <option value="{{ . }}"{{ if eq $.CurrentModel . }} selected{{ end }}>{{ . }}</option>
-                {{ end }}
-              </select>
-            </div>
-          </div>
           <textarea name="prompt" placeholder="Prompt Claude Code"></textarea>
         </div>
         <button class="chat-send" type="submit">SEND</button>

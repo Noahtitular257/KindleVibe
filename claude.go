@@ -78,6 +78,113 @@ type ClaudeViewData struct {
 	ModelOptions []string
 	Sessions     []ClaudeSessionInfo
 	Conversation ClaudeConversationView
+	Buddy        BuddyView
+}
+
+type BuddyView struct {
+	State      string
+	Art        []string
+	StatusMsg  string
+	Total      int
+	Running    int
+	Waiting    int
+	Msg        string
+	Entries    []string
+	PromptTool string
+	PromptHint string
+}
+
+func deriveBuddyView(conv ClaudeConversationView, hasSession bool) BuddyView {
+	bv := BuddyView{State: "sleep"}
+
+	if !hasSession {
+		bv.State = "sleep"
+		bv.StatusMsg = "zzz"
+	} else if len(conv.Permissions) > 0 {
+		bv.State = "attention"
+		bv.StatusMsg = "approve?"
+		bv.Waiting = len(conv.Permissions)
+		if len(conv.Permissions) > 0 {
+			bv.PromptTool = conv.Permissions[0].Title
+		}
+	} else if conv.Running {
+		bv.State = "busy"
+		bv.StatusMsg = "working..."
+		bv.Running = 1
+	} else if conv.StopReason == "end_turn" {
+		bv.State = "celebrate"
+		bv.StatusMsg = "done!"
+	} else if len(conv.Messages) > 0 {
+		bv.State = "idle"
+		bv.StatusMsg = ""
+	} else {
+		bv.State = "sleep"
+		bv.StatusMsg = "zzz"
+	}
+
+	if hasSession {
+		bv.Total = 1
+	}
+
+	bv.Msg = conv.Title
+	if bv.Msg == "" {
+		bv.Msg = bv.StatusMsg
+	}
+
+	for i := len(conv.Messages) - 1; i >= 0 && len(bv.Entries) < 3; i-- {
+		m := conv.Messages[i]
+		if m.Role == "assistant" && m.Text != "" {
+			line := m.Text
+			if len(line) > 60 {
+				line = line[:60] + "..."
+			}
+			bv.Entries = append(bv.Entries, line)
+		}
+	}
+
+	bv.Art = buddyASCII(bv.State)
+	return bv
+}
+
+func buddyASCII(state string) []string {
+	switch state {
+	case "sleep":
+		return []string{
+			`    .--.    `,
+			`  _( -- )_  `,
+			` (___zz___) `,
+		}
+	case "idle":
+		return []string{
+			`  n______n  `,
+			` ( o    o ) `,
+			`  '------'  `,
+		}
+	case "busy":
+		return []string{
+			`  n______n  `,
+			` ( v    v ) `,
+			` /'------'\ `,
+		}
+	case "attention":
+		return []string{
+			`    ^  ^    `,
+			` /^_____^\  `,
+			`( O      O )`,
+		}
+	case "celebrate":
+		return []string{
+			`    \***/   `,
+			`  n______n  `,
+			` ( ^    ^ ) `,
+		}
+	default:
+		return []string{
+			`  n______n  `,
+			` ( o    o ) `,
+			`  '------'  `,
+		}
+	}
 }
 
 type acpRPCMessage struct {
@@ -501,6 +608,7 @@ func (m *claudeManager) viewData(ctx context.Context, cfg *Config, selectedID st
 	}
 	if !data.Enabled {
 		data.Error = "Claude ACP is disabled in config.yaml."
+		data.Buddy = deriveBuddyView(data.Conversation, data.SelectedID != "")
 		return data
 	}
 
@@ -513,6 +621,7 @@ func (m *claudeManager) viewData(ctx context.Context, cfg *Config, selectedID st
 				data.CurrentModel = data.Conversation.CurrentModel
 				data.ModelOptions = claudeModelOptions(data.CurrentModel)
 			}
+			data.Buddy = deriveBuddyView(data.Conversation, true)
 			return data
 		}
 	}
@@ -526,6 +635,7 @@ func (m *claudeManager) viewData(ctx context.Context, cfg *Config, selectedID st
 	}
 
 	if data.SelectedID == "" {
+		data.Buddy = deriveBuddyView(data.Conversation, false)
 		return data
 	}
 
@@ -535,6 +645,7 @@ func (m *claudeManager) viewData(ctx context.Context, cfg *Config, selectedID st
 			SessionID: data.SelectedID,
 			Error:     err.Error(),
 		}
+		data.Buddy = deriveBuddyView(data.Conversation, true)
 		return data
 	}
 	data.Conversation = conversation
@@ -543,6 +654,7 @@ func (m *claudeManager) viewData(ctx context.Context, cfg *Config, selectedID st
 		data.ModelOptions = claudeModelOptions(data.CurrentModel)
 		m.setCurrentModel(conversation.CurrentModel)
 	}
+	data.Buddy = deriveBuddyView(data.Conversation, data.SelectedID != "")
 	return data
 }
 
@@ -1523,6 +1635,14 @@ func claudeFragmentHandler(cfg *Config, manager *claudeManager, tmpl *template.T
 		if err := tmpl.ExecuteTemplate(w, "claude-content", data); err != nil {
 			log.Printf("Claude Fragment Execute Error: %v", err)
 		}
+	}
+}
+
+func claudeBuddyHandler(cfg *Config, manager *claudeManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data := manager.viewData(r.Context(), cfg, r.URL.Query().Get("session_id"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(data.Buddy)
 	}
 }
 

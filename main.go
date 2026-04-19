@@ -2080,6 +2080,7 @@ func main() {
 		http.HandleFunc("/linear/done", linearDoneHandler(cfg, cache))
 		http.HandleFunc("/claude", claudePageHandler(cfg, cache, claude, tmpl))
 		http.HandleFunc("/claude/fragment", claudeFragmentHandler(cfg, claude, tmpl))
+		http.HandleFunc("/claude/buddy", claudeBuddyHandler(cfg, claude))
 		http.HandleFunc("/claude/send", claudeSendHandler(cfg, claude))
 		http.HandleFunc("/claude/model", claudeModelHandler(claude))
 		http.HandleFunc("/claude/permission", claudePermissionHandler(claude))
